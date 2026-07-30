@@ -10,11 +10,25 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="RCNMW Meetings">
 <meta name="theme-color" content="#1B4B8F">
+<script>
+  window.__appReady = false;
+  setTimeout(function(){
+    if(window.__appReady) return;
+    var app = document.getElementById('app');
+    if(!app) return;
+    app.innerHTML =
+      '<div style="max-width:420px;margin:60px auto;padding:24px;background:rgba(255,255,255,0.85);border-radius:16px;font-family:sans-serif;text-align:center;">' +
+        '<div style="font-size:15px;font-weight:700;margin-bottom:8px;">Taking longer than expected</div>' +
+        '<div style="font-size:13px;color:#5B6B85;margin-bottom:16px;">This usually means a required service (Firebase or fonts) couldn\'t load on your current network. Try switching between WiFi and mobile data, then reload.</div>' +
+        '<button onclick="location.reload()" style="padding:10px 18px;border:none;border-radius:9px;background:#1B4B8F;color:#fff;font-weight:700;font-size:13px;">Reload</button>' +
+      '</div>';
+  }, 8000);
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
 <style>
   /* ===== Design tokens — swap these for exact RCN Malawi brand hex values when available ===== */
   :root{
@@ -251,6 +265,7 @@
 
 <script>
 /* ============================= CONFIG ============================= */
+window.__appReady = true;
 const CONFIG = {
   apiKey: "AIzaSyCSEzkdAo3D2oJ-qrMOFgLtidhR4n6GcJY",
   authDomain: "rcnmw-callregister.firebaseapp.com",
@@ -814,6 +829,10 @@ window.addEventListener('beforeinstallprompt', (e)=>{
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{ navigator.serviceWorker.register('./sw.js').catch(err=>console.error('SW registration failed', err)); });
 }
+
+window.addEventListener('load', ()=>{
+  if(state.page==='dashboard') requestAnimationFrame(renderCharts);
+});
 
 loadAll();
 </script>
