@@ -1,4 +1,4 @@
-const CACHE_NAME = 'attendance-tracker-v1';
+const CACHE_NAME = 'rcnmw-meetings-v2';
 const ASSETS = [
   './',
   './index.html',
