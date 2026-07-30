@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Call attendance tracker</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Attendance">
+<meta name="theme-color" content="#128C7E">
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --green:#25D366;
+    --green-dark:#128C7E;
+    --ink:#0b141a;
+    --paper:#f7f8f6;
+    --card:#ffffff;
+    --line:#e3e6e2;
+    --muted:#6b7570;
+    --danger:#d64545;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--paper);
+    color:var(--ink);
+    padding-top:env(safe-area-inset-top);
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  .wrap{max-width:760px;margin:0 auto;padding:20px 16px 60px;}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;}
+  .logo{
+    width:40px;height:40px;border-radius:10px;background:var(--green);
+    display:flex;align-items:center;justify-content:center;color:white;font-size:20px;flex-shrink:0;
+  }
+  h1{font-size:19px;font-weight:600;margin:0;}
+  .sub{font-size:13px;color:var(--muted);margin-top:2px;}
+  .tabs{display:flex;gap:4px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:20px;position:sticky;top:8px;z-index:5;}
+  .tab{flex:1;text-align:center;padding:10px 6px;border-radius:9px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;user-select:none;}
+  .tab.active{background:var(--green);color:white;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px;}
+  .card h2{font-size:15px;margin:0 0 12px;font-weight:600;}
+  .row{display:flex;gap:8px;}
+  input[type=text], input[type=date]{
+    flex:1;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:14px;background:#fff;color:var(--ink);
+  }
+  input:focus{outline:2px solid var(--green);outline-offset:1px;}
+  button{
+    border:none;border-radius:9px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;
+  }
+  .btn-primary{background:var(--green-dark);color:white;}
+  .btn-primary:hover{background:var(--green);}
+  .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--line);}
+  .btn-ghost:hover{border-color:var(--danger);color:var(--danger);}
+  .btn-small{padding:6px 10px;font-size:12px;}
+  ul.plain{list-style:none;margin:0;padding:0;}
+  .member-row{
+    display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line);
+  }
+  .member-row:last-child{border-bottom:none;}
+  .name{font-size:14px;font-weight:500;}
+  .meta{font-size:12px;color:var(--muted);}
+  .empty{font-size:13px;color:var(--muted);padding:14px 0;text-align:center;}
+  .att-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line);gap:8px;}
+  .att-row:last-child{border-bottom:none;}
+  .status-btns{display:flex;gap:6px;flex-shrink:0;}
+  .status-btn{
+    padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--muted);cursor:pointer;
+  }
+  .status-btn.present.active{background:var(--green);border-color:var(--green);color:white;}
+  .status-btn.absent.active{background:var(--danger);border-color:var(--danger);color:white;}
+  .stat-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
+  .stat{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center;}
+  .stat .num{font-size:20px;font-weight:700;}
+  .stat .lbl{font-size:11px;color:var(--muted);margin-top:2px;}
+  .history-item{border-bottom:1px solid var(--line);padding:12px 0;}
+  .history-item:last-child{border-bottom:none;}
+  .history-head{display:flex;justify-content:space-between;font-size:13px;font-weight:600;margin-bottom:6px;}
+  .pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;margin:2px 4px 0 0;}
+  .pill.present{background:#e4f8ea;color:var(--green-dark);}
+  .pill.absent{background:#fbe6e6;color:var(--danger);}
+  select{padding:9px 10px;border:1px solid var(--line);border-radius:9px;font-size:13px;background:#fff;color:var(--ink);}
+  .rate-bar{height:6px;border-radius:99px;background:var(--line);overflow:hidden;margin-top:6px;}
+  .rate-fill{height:100%;background:var(--green);}
+  .install-banner{
+    display:none;background:#fff3d6;border:1px solid #f0c96a;color:#6b4f0a;font-size:12px;
+    padding:10px 14px;border-radius:10px;margin-bottom:16px;
+  }
+  .sync-banner{
+    background:#fbe6e6;border:1px solid #f0a5a5;color:#8a2c2c;font-size:12px;
+    padding:10px 14px;border-radius:10px;margin-bottom:16px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <div class="empty">Loading tracker…</div>
+</div>
+
+<script>
+const CONFIG = {
+  EDIT_PIN: '1234', // change this before sharing — this is the organizer PIN
+  // Paste your own Firebase project config here (from Firebase Console > Project settings > Your apps)
+  FIREBASE: {
+  apiKey: "AIzaSyCSEzkdAo3D2oJ-qrMOFgLtidhR4n6GcJY",
+  authDomain: "rcnmw-callregister.firebaseapp.com",
+  projectId: "rcnmw-callregister",
+  storageBucket: "rcnmw-callregister.firebasestorage.app",
+  messagingSenderId: "349024243223",
+  appId: "1:349024243223:web:cb1c431b6c0604486d9652"
+  }
+};
+
+let state = { members: [], meetings: [], attendance: {}, tab: 'take', unlocked: false, synced: false };
+let deferredInstallPrompt = null;
+let db = null;
+let docRef = null;
+
+function initFirebase() {
+  try {
+    firebase.initializeApp(CONFIG.FIREBASE);
+    db = firebase.firestore();
+    db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+    docRef = db.collection('attendance-tracker').doc('shared');
+
+    docRef.onSnapshot(snap => {
+      const data = snap.data() || {};
+      state.members = data.members || [];
+      state.meetings = data.meetings || [];
+      state.attendance = data.attendance || {};
+      state.synced = true;
+      render();
+    }, err => {
+      console.error('Firestore sync error', err);
+      state.synced = false;
+      render();
+    });
+  } catch (e) {
+    console.error('Firebase init failed', e);
+    state.synced = false;
+    render();
+  }
+}
+
+function saveState() {
+  if (!docRef) return;
+  docRef.set({
+    members: state.members,
+    meetings: state.meetings,
+    attendance: state.attendance
+  }, { merge: false }).catch(err => console.error('Save failed', err));
+}
+
+function loadAll() {
+  initFirebase();
+  render();
+}
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function setTab(t) { state.tab = t; render(); }
+
+function tryUnlock(pin) {
+  if (pin === CONFIG.EDIT_PIN) { state.unlocked = true; render(); }
+  else alert('Incorrect PIN');
+}
+function lock() { state.unlocked = false; render(); }
+
+function addMember(name) {
+  if (!name.trim()) return;
+  state.members.push({ id: uid(), name: name.trim() });
+  saveState();
+  render();
+}
+function removeMember(id) {
+  state.members = state.members.filter(m => m.id !== id);
+  saveState();
+  render();
+}
+
+function addMeeting(title, date) {
+  if (!title.trim()) return;
+  const meeting = { id: uid(), title: title.trim(), date: date || new Date().toISOString().slice(0,10) };
+  state.meetings.unshift(meeting);
+  state.attendance[meeting.id] = {};
+  saveState();
+  render();
+}
+function removeMeeting(id) {
+  state.meetings = state.meetings.filter(m => m.id !== id);
+  delete state.attendance[id];
+  saveState();
+  render();
+}
+
+function setStatus(meetingId, memberId, status) {
+  if (!state.attendance[meetingId]) state.attendance[meetingId] = {};
+  state.attendance[meetingId][memberId] = status;
+  saveState();
+  render();
+}
+
+function computeStats() {
+  const totalMeetings = state.meetings.length;
+  const perMember = {};
+  state.members.forEach(m => perMember[m.id] = { present: 0, total: 0 });
+  state.meetings.forEach(meeting => {
+    const att = state.attendance[meeting.id] || {};
+    state.members.forEach(m => {
+      if (att[m.id] === 'present' || att[m.id] === 'absent') {
+        perMember[m.id].total += 1;
+        if (att[m.id] === 'present') perMember[m.id].present += 1;
+      }
+    });
+  });
+  return { totalMeetings, perMember };
+}
+
+function render() {
+  const app = document.getElementById('app');
+  const needsSetup = CONFIG.FIREBASE.apiKey === 'YOUR_API_KEY';
+  app.innerHTML = `
+    ${needsSetup ? `<div class="sync-banner">Cloud sync isn't set up yet — paste your Firebase config into CONFIG.FIREBASE in the code. Data won't be shared across devices until then.</div>` : ''}
+    <div class="install-banner" id="install-banner">
+      Add this to your home screen for the full app experience.
+      <button class="btn-primary btn-small" id="install-btn" style="margin-left:8px;">Install</button>
+    </div>
+    <header>
+      <div class="logo">✓</div>
+      <div style="flex:1;">
+        <h1>Call attendance tracker</h1>
+        <div class="sub">Track who joined each WhatsApp group call or meeting</div>
+        <div class="sub" style="color:#a06a1a;margin-top:2px;">${state.unlocked ? 'Editing unlocked on this device' : 'View-only — enter the organizer PIN to edit'}</div>
+        <div class="sub" style="margin-top:2px;">${state.synced ? '🟢 Synced with cloud' : '⚪ Connecting…'}</div>
+      </div>
+      ${state.unlocked
+        ? `<button class="btn-ghost btn-small" id="lock-btn">Lock</button>`
+        : `<div class="row" style="width:auto;">
+             <input type="text" id="pin-input" placeholder="PIN" style="width:90px;">
+             <button class="btn-primary btn-small" id="unlock-btn">Unlock</button>
+           </div>`}
+    </header>
+    <div class="tabs">
+      <div class="tab ${state.tab==='take'?'active':''}" onclick="setTab('take')">Take attendance</div>
+      <div class="tab ${state.tab==='members'?'active':''}" onclick="setTab('members')">Members</div>
+      <div class="tab ${state.tab==='history'?'active':''}" onclick="setTab('history')">History &amp; stats</div>
+    </div>
+    <div id="content"></div>
+  `;
+  const content = document.getElementById('content');
+  if (state.tab === 'members') content.innerHTML = renderMembers();
+  else if (state.tab === 'history') content.innerHTML = renderHistory();
+  else content.innerHTML = renderTake();
+  attachHandlers();
+}
+
+function renderMembers() {
+  const addForm = state.unlocked ? `
+    <div class="card">
+      <h2>Add a member</h2>
+      <div class="row">
+        <input type="text" id="new-member" placeholder="Member name">
+        <button class="btn-primary" id="add-member-btn">Add</button>
+      </div>
+    </div>` : `<div class="card"><div class="empty">Unlock editing above to add or remove members.</div></div>`;
+
+  return `
+    ${addForm}
+    <div class="card">
+      <h2>Members (${state.members.length})</h2>
+      ${state.members.length === 0 ? '<div class="empty">No members yet.</div>' :
+        '<ul class="plain">' + state.members.map(m => `
+          <li class="member-row">
+            <span class="name">${escapeHtml(m.name)}</span>
+            ${state.unlocked ? `<button class="btn-ghost btn-small" data-remove-member="${m.id}">Remove</button>` : ''}
+          </li>
+        `).join('') + '</ul>'}
+    </div>
+  `;
+}
+
+function renderTake() {
+  const meetingOptions = state.meetings.map(m => `<option value="${m.id}">${escapeHtml(m.title)} — ${m.date}</option>`).join('');
+  const currentId = state._activeMeeting || (state.meetings[0] && state.meetings[0].id);
+  const meeting = state.meetings.find(m => m.id === currentId);
+
+  let attendanceList = '';
+  if (meeting) {
+    if (state.members.length === 0) {
+      attendanceList = '<div class="empty">Add members first in the Members tab.</div>';
+    } else {
+      attendanceList = '<ul class="plain">' + state.members.map(m => {
+        const status = (state.attendance[meeting.id] || {})[m.id];
+        const badge = status === 'present'
+          ? '<span class="pill present">Present</span>'
+          : status === 'absent'
+            ? '<span class="pill absent">Absent</span>'
+            : '<span class="meta">Not marked</span>';
+        const controls = state.unlocked ? `
+            <span class="status-btns">
+              <button class="status-btn present ${status==='present'?'active':''}" data-status-meeting="${meeting.id}" data-status-member="${m.id}" data-status-value="present">Present</button>
+              <button class="status-btn absent ${status==='absent'?'active':''}" data-status-meeting="${meeting.id}" data-status-member="${m.id}" data-status-value="absent">Absent</button>
+            </span>` : badge;
+        return `
+          <li class="att-row">
+            <span class="name">${escapeHtml(m.name)}</span>
+            ${controls}
+          </li>`;
+      }).join('') + '</ul>';
+    }
+  }
+
+  const newMeetingForm = state.unlocked ? `
+    <div class="card">
+      <h2>New meeting</h2>
+      <div class="row">
+        <input type="text" id="new-meeting-title" placeholder="Meeting title (e.g. Weekly sync)">
+        <input type="date" id="new-meeting-date">
+      </div>
+      <div style="margin-top:10px;">
+        <button class="btn-primary" id="add-meeting-btn">Create meeting</button>
+      </div>
+    </div>` : '';
+
+  return `
+    ${newMeetingForm}
+    ${state.meetings.length === 0 ? '<div class="card"><div class="empty">No meetings yet. Unlock editing to create one.</div></div>' : `
+    <div class="card">
+      <h2>Mark attendance</h2>
+      <div class="row" style="margin-bottom:14px;">
+        <select id="meeting-select" style="flex:1;">${meetingOptions}</select>
+        ${state.unlocked ? '<button class="btn-ghost btn-small" id="delete-meeting-btn">Delete meeting</button>' : ''}
+      </div>
+      ${attendanceList}
+    </div>`}
+  `;
+}
+
+function renderHistory() {
+  const { totalMeetings, perMember } = computeStats();
+  const statCards = `
+    <div class="stat-grid" style="margin-bottom:16px;">
+      <div class="stat"><div class="num">${totalMeetings}</div><div class="lbl">Meetings held</div></div>
+      <div class="stat"><div class="num">${state.members.length}</div><div class="lbl">Members</div></div>
+      <div class="stat"><div class="num">${totalMeetings && state.members.length ? Math.round(100*Object.values(perMember).reduce((a,p)=>a+p.present,0)/(totalMeetings*state.members.length)) : 0}%</div><div class="lbl">Avg attendance</div></div>
+    </div>
+  `;
+
+  const memberStats = state.members.map(m => {
+    const s = perMember[m.id] || { present: 0, total: 0 };
+    const pct = s.total ? Math.round(100*s.present/s.total) : 0;
+    return `
+      <div style="margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;font-size:13px;">
+          <span class="name">${escapeHtml(m.name)}</span>
+          <span class="meta">${s.present}/${s.total} (${pct}%)</span>
+        </div>
+        <div class="rate-bar"><div class="rate-fill" style="width:${pct}%"></div></div>
+      </div>
+    `;
+  }).join('');
+
+  const history = state.meetings.map(meeting => {
+    const att = state.attendance[meeting.id] || {};
+    const present = state.members.filter(m => att[m.id] === 'present');
+    const absent = state.members.filter(m => att[m.id] === 'absent');
+    return `
+      <div class="history-item">
+        <div class="history-head"><span>${escapeHtml(meeting.title)}</span><span class="meta">${meeting.date}</span></div>
+        <div>
+          ${present.map(m => `<span class="pill present">${escapeHtml(m.name)}</span>`).join('')}
+          ${absent.map(m => `<span class="pill absent">${escapeHtml(m.name)}</span>`).join('')}
+          ${present.length===0 && absent.length===0 ? '<span class="meta">No attendance marked yet</span>' : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="card">${statCards}
+      <h2>Attendance by member</h2>
+      ${state.members.length === 0 ? '<div class="empty">No members yet.</div>' : memberStats}
+    </div>
+    <div class="card">
+      <h2>Meeting history</h2>
+      ${state.meetings.length === 0 ? '<div class="empty">No meetings recorded yet.</div>' : history}
+    </div>
+  `;
+}
+
+function escapeHtml(str) {
+  return str.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function attachHandlers() {
+  const unlockBtn = document.getElementById('unlock-btn');
+  if (unlockBtn) unlockBtn.onclick = () => tryUnlock(document.getElementById('pin-input').value);
+  const lockBtn = document.getElementById('lock-btn');
+  if (lockBtn) lockBtn.onclick = lock;
+
+  const addMemberBtn = document.getElementById('add-member-btn');
+  if (addMemberBtn) addMemberBtn.onclick = () => {
+    const input = document.getElementById('new-member');
+    addMember(input.value);
+    input.value = '';
+  };
+  document.querySelectorAll('[data-remove-member]').forEach(btn =>
+    btn.onclick = () => removeMember(btn.getAttribute('data-remove-member')));
+
+  const addMeetingBtn = document.getElementById('add-meeting-btn');
+  if (addMeetingBtn) addMeetingBtn.onclick = () => {
+    const title = document.getElementById('new-meeting-title');
+    const date = document.getElementById('new-meeting-date');
+    addMeeting(title.value, date.value);
+    title.value = ''; date.value = '';
+  };
+
+  const meetingSelect = document.getElementById('meeting-select');
+  if (meetingSelect) {
+    if (state._activeMeeting) meetingSelect.value = state._activeMeeting;
+    meetingSelect.onchange = () => { state._activeMeeting = meetingSelect.value; render(); };
+  }
+
+  const deleteMeetingBtn = document.getElementById('delete-meeting-btn');
+  if (deleteMeetingBtn) deleteMeetingBtn.onclick = () => {
+    const id = meetingSelect ? meetingSelect.value : null;
+    if (id) removeMeeting(id);
+  };
+
+  document.querySelectorAll('[data-status-meeting]').forEach(btn => {
+    btn.onclick = () => setStatus(
+      btn.getAttribute('data-status-meeting'),
+      btn.getAttribute('data-status-member'),
+      btn.getAttribute('data-status-value')
+    );
+  });
+
+  const installBtn = document.getElementById('install-btn');
+  if (installBtn) installBtn.onclick = async () => {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    document.getElementById('install-banner').style.display = 'none';
+  };
+}
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  const banner = document.getElementById('install-banner');
+  if (banner) banner.style.display = 'block';
+});
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(err => console.error('SW registration failed', err));
+  });
+}
+
+loadAll();
+</script>
+</body>
+</html>
