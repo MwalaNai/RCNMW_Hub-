@@ -24,10 +24,6 @@
       '</div>';
   }, 8000);
 </script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
 <style>
   /* ===== Design tokens — swap these for exact RCN Malawi brand hex values when available ===== */
@@ -55,7 +51,7 @@
   html,body{height:100%;}
   body{
     margin:0;
-    font-family:'Inter',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
     color:var(--ink);
     background:
       radial-gradient(1200px 600px at 85% -10%, rgba(61,123,224,0.18), transparent 60%),
@@ -292,6 +288,56 @@ let state = {
 let deferredInstallPrompt = null;
 let db = null, docRef = null;
 let trendChart = null, catChart = null;
+let localMode = false;
+
+/* ============================= RESILIENT SCRIPT LOADING ============================= */
+function loadScript(src, timeoutMs){
+  return new Promise((resolve, reject)=>{
+    const s = document.createElement('script');
+    s.src = src;
+    let done = false;
+    const timer = setTimeout(()=>{
+      if(done) return;
+      done = true; s.remove();
+      reject(new Error('timeout loading ' + src));
+    }, timeoutMs);
+    s.onload = ()=>{ if(done) return; done = true; clearTimeout(timer); resolve(); };
+    s.onerror = ()=>{ if(done) return; done = true; clearTimeout(timer); s.remove(); reject(new Error('failed to load ' + src)); };
+    document.head.appendChild(s);
+  });
+}
+
+async function bootFirebase(){
+  const sources = [
+    ['https://cdn.jsdelivr.net/npm/firebase@10.14.1/firebase-app-compat.js', 'https://cdn.jsdelivr.net/npm/firebase@10.14.1/firebase-firestore-compat.js'],
+    ['https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js', 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js']
+  ];
+  for(const [appUrl, fsUrl] of sources){
+    try{
+      await loadScript(appUrl, 6000);
+      await loadScript(fsUrl, 6000);
+      initFirebase();
+      return;
+    }catch(e){
+      console.warn('Firebase source failed, trying next option', e);
+    }
+  }
+  console.warn('All Firebase sources failed — continuing in local-only mode.');
+  enterLocalMode();
+}
+
+function enterLocalMode(){
+  localMode = true;
+  try{
+    const raw = localStorage.getItem('rcnmw-local-data');
+    const data = raw ? JSON.parse(raw) : {};
+    state.members = data.members || [];
+    state.meetings = data.meetings || [];
+    state.attendance = data.attendance || {};
+  }catch(e){ console.error('Local load failed', e); }
+  state.synced = 'local';
+  render();
+}
 
 /* ============================= FIREBASE ============================= */
 function initFirebase() {
@@ -311,11 +357,16 @@ function initFirebase() {
   } catch (e) { console.error('Firebase init failed', e); state.synced = false; render(); }
 }
 function saveState() {
+  if (localMode) {
+    try { localStorage.setItem('rcnmw-local-data', JSON.stringify({ members: state.members, meetings: state.meetings, attendance: state.attendance })); }
+    catch (e) { console.error('Local save failed', e); }
+    return;
+  }
   if (!docRef) return;
   docRef.set({ members: state.members, meetings: state.meetings, attendance: state.attendance }, { merge: false })
     .catch(err => console.error('Save failed', err));
 }
-function loadAll() { initFirebase(); render(); }
+function loadAll() { render(); bootFirebase(); }
 
 /* ============================= HELPERS ============================= */
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
@@ -461,7 +512,7 @@ function renderTopbar(){
         <div><div class="page-title">${title}</div><div class="page-sub">${sub}</div></div>
       </div>
       <div class="topbar-right">
-        <span class="sync-pill"><span class="dot ${state.synced?'':'off'}"></span>${state.synced?'Synced':'Connecting…'}</span>
+        <span class="sync-pill"><span class="dot ${state.synced===true?'':'off'}"></span>${state.synced===true?'Synced':(state.synced==='local'?'⚠️ Local only (not synced)':'Connecting…')}</span>
         ${state.page==='register' && state.unlocked ? `<button class="btn btn-gold btn-sm" id="new-meeting-btn">+ Register Meeting</button>` : ''}
       </div>
     </div>
