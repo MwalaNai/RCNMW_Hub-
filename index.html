@@ -3,43 +3,30 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>RCNMW Call Meetings Register &amp; Tracker</title>
+<title>RCNMW Call Meetings Register</title>
 <link rel="manifest" href="./manifest.json">
 <link rel="icon" href="./icon-192.png">
 <link rel="apple-touch-icon" href="./icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="RCNMW Meetings">
-<meta name="theme-color" content="#1B4B8F">
-<script>
-  window.__appReady = false;
-  setTimeout(function(){
-    if(window.__appReady) return;
-    var app = document.getElementById('app');
-    if(!app) return;
-    app.innerHTML =
-      '<div style="max-width:420px;margin:60px auto;padding:24px;background:rgba(255,255,255,0.85);border-radius:16px;font-family:sans-serif;text-align:center;">' +
-        '<div style="font-size:15px;font-weight:700;margin-bottom:8px;">Taking longer than expected</div>' +
-        '<div style="font-size:13px;color:#5B6B85;margin-bottom:16px;">This usually means a required service (Firebase or fonts) couldn\'t load on your current network. Try switching between WiFi and mobile data, then reload.</div>' +
-        '<button onclick="location.reload()" style="padding:10px 18px;border:none;border-radius:9px;background:#1B4B8F;color:#fff;font-weight:700;font-size:13px;">Reload</button>' +
-      '</div>';
-  }, 8000);
-</script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+<meta name="apple-mobile-web-app-title" content="RCNMW Register">
+<meta name="theme-color" content="#1A1836">
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <style>
-  /* ===== Design tokens — swap these for exact RCN Malawi brand hex values when available ===== */
   :root{
     --rcn-blue:#1B4B8F;
     --rcn-blue-light:#3D7BE0;
-    --rcn-navy:#0E2A52;
+    --rcn-navy:#1A1836;
+    --rcn-red:#D6362A;
+    --rcn-red-light:#EA5D3F;
     --rcn-gold:#C9A227;
     --success:#16A34A;
     --warning:#D97706;
     --danger:#DC2626;
-    --info:#0EA5E9;
     --ink:#0E1B2E;
     --muted:#5B6B85;
     --glass-bg:rgba(255,255,255,0.6);
-    --glass-bg-strong:rgba(255,255,255,0.78);
+    --glass-bg-strong:rgba(255,255,255,0.8);
     --glass-border:rgba(255,255,255,0.7);
     --line:rgba(14,42,82,0.08);
     --radius-lg:22px;
@@ -61,14 +48,12 @@
     padding-top:env(safe-area-inset-top);
     padding-bottom:env(safe-area-inset-bottom);
   }
-  a{color:inherit;}
   button{font-family:inherit;border:none;cursor:pointer;}
   input,select,textarea{font-family:inherit;}
 
-  /* ===== Layout ===== */
   .shell{display:flex;min-height:100vh;}
   .sidebar{
-    width:230px;flex-shrink:0;padding:22px 14px;
+    width:210px;flex-shrink:0;padding:22px 14px;
     background:var(--glass-bg);
     backdrop-filter:blur(28px) saturate(160%);
     -webkit-backdrop-filter:blur(28px) saturate(160%);
@@ -80,73 +65,36 @@
   }
   .brand{display:flex;align-items:center;gap:10px;padding:8px 10px 22px;}
   .brand-mark{
-    width:38px;height:38px;border-radius:12px;flex-shrink:0;
-    background:linear-gradient(135deg,var(--rcn-blue),var(--rcn-blue-light));
-    display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:15px;
-    box-shadow:0 4px 14px rgba(27,75,143,0.35);
+    width:44px;height:44px;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;
   }
+  .brand-mark img{width:100%;height:100%;object-fit:contain;}
   .brand-text{line-height:1.15;}
-  .brand-text .t1{font-weight:800;font-size:13.5px;letter-spacing:.2px;}
-  .brand-text .t2{font-size:10.5px;color:var(--muted);font-weight:500;}
+  .brand-text .t1{font-weight:800;font-size:13.5px;letter-spacing:.2px;color:var(--rcn-navy);}
+  .brand-text .t2{font-size:10px;color:var(--muted);font-weight:500;}
   .navitem{
     display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:var(--radius-sm);
     font-size:13.5px;font-weight:600;color:var(--muted);cursor:pointer;user-select:none;
-    transition:background .15s ease,color .15s ease,transform .15s ease;
   }
   .navitem svg{width:18px;height:18px;flex-shrink:0;}
-  .navitem:hover{background:rgba(27,75,143,0.06);color:var(--rcn-blue);}
+  .navitem:hover{background:rgba(214,54,42,0.06);color:var(--rcn-red);}
   .navitem.active{
-    background:linear-gradient(135deg,var(--rcn-blue),var(--rcn-blue-light));
-    color:#fff;box-shadow:0 6px 16px rgba(27,75,143,0.28);
+    background:linear-gradient(135deg,var(--rcn-navy),var(--rcn-red));
+    color:#fff;box-shadow:0 6px 16px rgba(26,24,54,0.3);
   }
   .sidebar-footer{margin-top:auto;padding:10px;font-size:11px;color:var(--muted);}
 
   .main{flex:1;min-width:0;padding:20px 22px 60px;}
-  .topbar{
-    display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:space-between;
-    margin-bottom:20px;
-  }
+  .topbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:space-between;margin-bottom:20px;}
   .page-title{font-size:21px;font-weight:800;letter-spacing:-.2px;}
   .page-sub{font-size:12.5px;color:var(--muted);margin-top:2px;}
   .topbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .menu-toggle{display:none;width:38px;height:38px;border-radius:10px;background:var(--glass-bg-strong);border:1px solid var(--glass-border);align-items:center;justify-content:center;}
 
-  .menu-toggle{
-    display:none;width:38px;height:38px;border-radius:10px;background:var(--glass-bg-strong);
-    border:1px solid var(--glass-border);align-items:center;justify-content:center;
-  }
-
-  /* ===== Glass card ===== */
-  .glass{
-    background:var(--glass-bg);
-    backdrop-filter:blur(22px) saturate(160%);
-    -webkit-backdrop-filter:blur(22px) saturate(160%);
-    border:1px solid var(--glass-border);
-    border-radius:var(--radius-lg);
-    box-shadow:var(--shadow-glass);
-  }
+  .glass{background:var(--glass-bg);backdrop-filter:blur(22px) saturate(160%);-webkit-backdrop-filter:blur(22px) saturate(160%);border:1px solid var(--glass-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-glass);}
   .card{padding:18px 20px;margin-bottom:16px;}
   .card h2{font-size:14.5px;font-weight:700;margin:0 0 4px;}
-  .card .card-sub{font-size:12px;color:var(--muted);margin:0 0 14px;}
 
-  /* ===== KPI grid ===== */
-  .kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:18px;}
-  .kpi{
-    padding:16px;border-radius:var(--radius-md);
-    background:var(--glass-bg-strong);border:1px solid var(--glass-border);
-    box-shadow:var(--shadow-glass);
-    display:flex;flex-direction:column;gap:6px;
-    transition:transform .18s ease;
-  }
-  .kpi:hover{transform:translateY(-2px);}
-  .kpi .kpi-icon{
-    width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:#fff;
-  }
-  .kpi .kpi-num{font-size:22px;font-weight:800;line-height:1;}
-  .kpi .kpi-lbl{font-size:11px;color:var(--muted);font-weight:600;}
-
-  .grid-2{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;}
-
-  /* ===== Table ===== */
   .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;}
   .search-wrap{position:relative;flex:1;min-width:200px;}
   .search-wrap svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--muted);}
@@ -157,53 +105,33 @@
   .search-wrap input{padding-left:34px;}
   input:focus,select:focus,textarea:focus{outline:2px solid var(--rcn-blue-light);outline-offset:1px;}
   textarea{resize:vertical;min-height:70px;font-family:inherit;}
-  .btn{padding:10px 16px;border-radius:10px;font-size:13px;font-weight:700;transition:transform .12s ease, box-shadow .12s ease;}
+  .btn{padding:10px 16px;border-radius:10px;font-size:13px;font-weight:700;}
   .btn:active{transform:scale(.97);}
   .btn-primary{background:linear-gradient(135deg,var(--rcn-blue),var(--rcn-blue-light));color:#fff;box-shadow:0 6px 16px rgba(27,75,143,0.3);}
-  .btn-gold{background:linear-gradient(135deg,#D8B23B,var(--rcn-gold));color:#3a2e05;box-shadow:0 6px 16px rgba(201,162,39,0.3);}
+  .btn-gold{background:linear-gradient(135deg,var(--rcn-red-light),var(--rcn-red));color:#fff;box-shadow:0 6px 16px rgba(214,54,42,0.35);}
   .btn-ghost{background:rgba(255,255,255,0.6);color:var(--muted);border:1px solid var(--line);}
   .btn-ghost:hover{color:var(--danger);border-color:var(--danger);}
   .btn-sm{padding:7px 11px;font-size:12px;}
 
   table{width:100%;border-collapse:collapse;font-size:13px;}
-  thead th{
-    text-align:left;padding:10px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;
-    color:var(--muted);font-weight:700;border-bottom:1px solid var(--line);
-  }
-  tbody tr{cursor:pointer;transition:background .15s ease;}
+  thead th{text-align:left;padding:10px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;border-bottom:1px solid var(--line);}
+  tbody tr{cursor:pointer;}
   tbody tr:hover{background:rgba(27,75,143,0.05);}
   tbody td{padding:12px;border-bottom:1px solid var(--line);vertical-align:middle;}
   .row-title{font-weight:700;}
   .row-meta{font-size:11px;color:var(--muted);}
-
   .badge{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:4px 9px;border-radius:99px;}
   .badge.upcoming{background:#E6F0FF;color:var(--rcn-blue);}
   .badge.completed{background:#E3F8EA;color:var(--success);}
   .badge.cancelled{background:#FBE7E7;color:var(--danger);}
   .badge.postponed{background:#FFF3DC;color:var(--warning);}
-  .badge.inprogress{background:#E4F6FC;color:var(--info);}
+  .badge.inprogress{background:#E4F6FC;color:#0EA5E9;}
   .badge.awaiting{background:#F3E9FF;color:#7B3FE4;}
   .badge.closed{background:#EDEFF3;color:var(--muted);}
-  .badge.fu-yes{background:#FFF3DC;color:var(--warning);}
-  .badge.fu-overdue{background:#FBE7E7;color:var(--danger);}
-
   .empty{font-size:13px;color:var(--muted);padding:26px 0;text-align:center;}
 
-  /* ===== Tabs (secondary, e.g. members) ===== */
-  .subtabs{display:flex;gap:4px;background:var(--glass-bg-strong);border:1px solid var(--glass-border);border-radius:12px;padding:4px;margin-bottom:16px;width:fit-content;}
-  .subtab{padding:8px 16px;border-radius:9px;font-size:12.5px;font-weight:700;color:var(--muted);cursor:pointer;}
-  .subtab.active{background:linear-gradient(135deg,var(--rcn-blue),var(--rcn-blue-light));color:#fff;}
-
-  /* ===== Modal ===== */
-  .modal-backdrop{
-    position:fixed;inset:0;background:rgba(14,27,46,0.45);backdrop-filter:blur(4px);
-    display:flex;align-items:flex-start;justify-content:center;padding:26px 14px;overflow-y:auto;z-index:100;
-  }
-  .modal{
-    width:100%;max-width:640px;background:rgba(255,255,255,0.92);backdrop-filter:blur(24px);
-    border-radius:var(--radius-lg);border:1px solid var(--glass-border);box-shadow:0 20px 60px rgba(14,27,46,0.35);
-    padding:22px 24px 24px;
-  }
+  .modal-backdrop{position:fixed;inset:0;background:rgba(14,27,46,0.45);backdrop-filter:blur(4px);display:flex;align-items:flex-start;justify-content:center;padding:26px 14px;overflow-y:auto;z-index:100;}
+  .modal{width:100%;max-width:640px;background:rgba(255,255,255,0.94);backdrop-filter:blur(24px);border-radius:var(--radius-lg);border:1px solid var(--glass-border);box-shadow:0 20px 60px rgba(14,27,46,0.35);padding:22px 24px 24px;}
   .modal-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;}
   .modal-head h2{font-size:17px;margin:0;}
   .modal-close{width:30px;height:30px;border-radius:9px;background:rgba(0,0,0,0.05);flex-shrink:0;font-size:15px;color:var(--muted);}
@@ -221,38 +149,21 @@
   .status-btn.present.active{background:var(--success);border-color:var(--success);color:#fff;}
   .status-btn.absent.active{background:var(--danger);border-color:var(--danger);color:#fff;}
 
-  .fu-card{padding:14px 16px;border-radius:var(--radius-md);margin-bottom:10px;border:1px solid var(--line);background:rgba(255,255,255,0.7);}
-  .fu-head{display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:700;margin-bottom:4px;}
-
   .sync-pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--muted);padding:6px 10px;border-radius:99px;background:var(--glass-bg-strong);border:1px solid var(--glass-border);}
   .dot{width:7px;height:7px;border-radius:50%;background:var(--success);}
   .dot.off{background:#9aa5b6;}
-
   .setup-banner{background:#FBE7E7;border:1px solid #f0a5a5;color:#8a2c2c;font-size:12.5px;padding:11px 15px;border-radius:12px;margin-bottom:16px;}
-  .install-banner{display:none;background:#FFF3DC;border:1px solid #f0c96a;color:#6b4f0a;font-size:12.5px;padding:11px 15px;border-radius:12px;margin-bottom:16px;align-items:center;justify-content:space-between;gap:10px;}
-
-  .chart-wrap{position:relative;height:220px;}
-  .cat-bar{margin-bottom:12px;}
-  .cat-bar-head{display:flex;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:5px;}
-  .cat-bar-track{height:8px;border-radius:99px;background:rgba(27,75,143,0.09);overflow:hidden;}
-  .cat-bar-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--rcn-blue),var(--rcn-blue-light));}
 
   ::-webkit-scrollbar{width:9px;height:9px;}
   ::-webkit-scrollbar-thumb{background:rgba(27,75,143,0.22);border-radius:99px;}
 
-  @media(max-width:980px){
-    .kpi-grid{grid-template-columns:repeat(3,1fr);}
-    .grid-2{grid-template-columns:1fr;}
-  }
   @media(max-width:760px){
     .menu-toggle{display:flex;}
-    .sidebar{position:fixed;left:0;top:0;transform:translateX(-100%);width:250px;}
+    .sidebar{position:fixed;left:0;top:0;transform:translateX(-100%);width:230px;}
     .sidebar.open{transform:translateX(0);}
-    .kpi-grid{grid-template-columns:repeat(2,1fr);}
     .field-row,.field-row-3{grid-template-columns:1fr;}
     table{font-size:12px;}
-    thead th:nth-child(4),tbody td:nth-child(4),
-    thead th:nth-child(5),tbody td:nth-child(5){display:none;}
+    thead th:nth-child(4),tbody td:nth-child(4){display:none;}
   }
 </style>
 </head>
@@ -260,8 +171,6 @@
 <div id="app"><div class="empty" style="padding:60px;">Loading RCNMW Meetings Register…</div></div>
 
 <script>
-/* ============================= CONFIG ============================= */
-window.__appReady = true;
 const CONFIG = {
   apiKey: "AIzaSyCSEzkdAo3D2oJ-qrMOFgLtidhR4n6GcJY",
   authDomain: "rcnmw-callregister.firebaseapp.com",
@@ -276,70 +185,17 @@ const CATEGORIES = ['Prayer Call','Leadership Meeting','Follow-up Meeting','Comm
 const STATUSES = ['Upcoming','In Progress','Completed','Cancelled','Postponed','Awaiting Follow-up','Closed'];
 const PRIORITIES = ['Low','Medium','High'];
 
-/* ============================= STATE ============================= */
 let state = {
   members: [], meetings: [], attendance: {},
-  page: 'dashboard', membersSubtab: 'list',
+  page: 'register',
   unlocked: false, synced: false,
   search: '', sortDesc: true,
   openMeetingId: null, editingMeetingId: null,
   sidebarOpen: false
 };
-let deferredInstallPrompt = null;
 let db = null, docRef = null;
-let trendChart = null, catChart = null;
-let localMode = false;
 
-/* ============================= RESILIENT SCRIPT LOADING ============================= */
-function loadScript(src, timeoutMs){
-  return new Promise((resolve, reject)=>{
-    const s = document.createElement('script');
-    s.src = src;
-    let done = false;
-    const timer = setTimeout(()=>{
-      if(done) return;
-      done = true; s.remove();
-      reject(new Error('timeout loading ' + src));
-    }, timeoutMs);
-    s.onload = ()=>{ if(done) return; done = true; clearTimeout(timer); resolve(); };
-    s.onerror = ()=>{ if(done) return; done = true; clearTimeout(timer); s.remove(); reject(new Error('failed to load ' + src)); };
-    document.head.appendChild(s);
-  });
-}
-
-async function bootFirebase(){
-  const sources = [
-    ['https://cdn.jsdelivr.net/npm/firebase@10.14.1/firebase-app-compat.js', 'https://cdn.jsdelivr.net/npm/firebase@10.14.1/firebase-firestore-compat.js'],
-    ['https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js', 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js']
-  ];
-  for(const [appUrl, fsUrl] of sources){
-    try{
-      await loadScript(appUrl, 6000);
-      await loadScript(fsUrl, 6000);
-      initFirebase();
-      return;
-    }catch(e){
-      console.warn('Firebase source failed, trying next option', e);
-    }
-  }
-  console.warn('All Firebase sources failed — continuing in local-only mode.');
-  enterLocalMode();
-}
-
-function enterLocalMode(){
-  localMode = true;
-  try{
-    const raw = localStorage.getItem('rcnmw-local-data');
-    const data = raw ? JSON.parse(raw) : {};
-    state.members = data.members || [];
-    state.meetings = data.meetings || [];
-    state.attendance = data.attendance || {};
-  }catch(e){ console.error('Local load failed', e); }
-  state.synced = 'local';
-  render();
-}
-
-/* ============================= FIREBASE ============================= */
+/* ============================= FIREBASE (single reliable source) ============================= */
 function initFirebase() {
   try {
     firebase.initializeApp(CONFIG.FIREBASE);
@@ -357,25 +213,18 @@ function initFirebase() {
   } catch (e) { console.error('Firebase init failed', e); state.synced = false; render(); }
 }
 function saveState() {
-  if (localMode) {
-    try { localStorage.setItem('rcnmw-local-data', JSON.stringify({ members: state.members, meetings: state.meetings, attendance: state.attendance })); }
-    catch (e) { console.error('Local save failed', e); }
-    return;
-  }
   if (!docRef) return;
   docRef.set({ members: state.members, meetings: state.meetings, attendance: state.attendance }, { merge: false })
     .catch(err => console.error('Save failed', err));
 }
-function loadAll() { render(); bootFirebase(); }
+function loadAll() { initFirebase(); render(); }
 
 /* ============================= HELPERS ============================= */
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 function todayISO() { return new Date().toISOString().slice(0,10); }
 function escapeHtml(str) { return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function fmtDate(d) { if(!d) return '—'; const dt = new Date(d+'T00:00:00'); return dt.toLocaleDateString(undefined,{day:'2-digit',month:'short',year:'numeric'}); }
-function statusClass(s){
-  return ({'Upcoming':'upcoming','In Progress':'inprogress','Completed':'completed','Cancelled':'cancelled','Postponed':'postponed','Awaiting Follow-up':'awaiting','Closed':'closed'})[s] || 'upcoming';
-}
+function statusClass(s){ return ({'Upcoming':'upcoming','In Progress':'inprogress','Completed':'completed','Cancelled':'cancelled','Postponed':'postponed','Awaiting Follow-up':'awaiting','Closed':'closed'})[s] || 'upcoming'; }
 function navigate(page){ state.page = page; state.sidebarOpen = false; render(); }
 function toggleSidebar(){ state.sidebarOpen = !state.sidebarOpen; render(); }
 function tryUnlock(pin){ if(pin === CONFIG.EDIT_PIN){ state.unlocked = true; render(); } else alert('Incorrect PIN'); }
@@ -400,8 +249,8 @@ function removeMember(id){ state.members = state.members.filter(m=>m.id!==id); s
 /* ============================= MEETING ACTIONS ============================= */
 function blankMeeting(){
   return { id:uid(), title:'', category:CATEGORIES[0], date:todayISO(), startTime:'', endTime:'',
-    venue:'', mode:'Physical', facilitator:'', ministry:'', participants:[], objective:'',
-    followUpRequired:false, followUpDate:'', followUpDone:false, priority:'Medium', status:'Upcoming', remarks:'' };
+    venue:'', mode:'Physical', facilitator:'', ministry:'', objective:'',
+    followUpRequired:false, followUpDate:'', priority:'Medium', status:'Upcoming', remarks:'' };
 }
 function saveMeeting(m){
   const idx = state.meetings.findIndex(x=>x.id===m.id);
@@ -420,40 +269,8 @@ function setStatus(meetingId, memberId, status){
   state.attendance[meetingId][memberId]=status;
   saveState(); render();
 }
-function toggleFollowUpDone(id){
-  const m = state.meetings.find(x=>x.id===id); if(!m) return;
-  m.followUpDone = !m.followUpDone; saveState(); render();
-}
 
-/* ============================= COMPUTED ============================= */
-function computeKPIs(){
-  const today = todayISO();
-  const thisMonth = today.slice(0,7);
-  const meetingsToday = state.meetings.filter(m=>m.date===today).length;
-  const upcoming = state.meetings.filter(m=>m.date>today && m.status!=='Cancelled').length;
-  const completed = state.meetings.filter(m=>m.status==='Completed'||(m.date<today && m.status!=='Cancelled')).length;
-  const followUpsDue = state.meetings.filter(m=>m.followUpRequired && !m.followUpDone && m.followUpDate && m.followUpDate<=today).length;
-  const activeMinistries = new Set(state.meetings.map(m=>m.ministry).filter(Boolean)).size;
-  const monthlyCount = state.meetings.filter(m=>m.date && m.date.slice(0,7)===thisMonth).length;
-  return { meetingsToday, upcoming, completed, followUpsDue, activeMinistries, monthlyCount };
-}
-function computeMonthlyTrend(){
-  const months = [];
-  const now = new Date();
-  for(let i=5;i>=0;i--){
-    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
-    months.push({ key:d.toISOString().slice(0,7), label:d.toLocaleDateString(undefined,{month:'short'}) });
-  }
-  return months.map(mo => ({ label: mo.label, count: state.meetings.filter(m=>m.date && m.date.slice(0,7)===mo.key).length }));
-}
-function computeCategoryBreakdown(){
-  const counts = {};
-  CATEGORIES.forEach(c=>counts[c]=0);
-  state.meetings.forEach(m=>{ counts[m.category] = (counts[m.category]||0)+1; });
-  return counts;
-}
-
-/* ============================= RENDER ROOT ============================= */
+/* ============================= RENDER ============================= */
 function render(){
   const app = document.getElementById('app');
   const needsSetup = CONFIG.FIREBASE.apiKey === 'YOUR_API_KEY';
@@ -462,31 +279,25 @@ function render(){
       ${renderSidebar()}
       <div class="main">
         ${needsSetup ? `<div class="setup-banner">Cloud sync isn't configured yet — paste your Firebase config into CONFIG.FIREBASE. Data won't sync across devices until then.</div>` : ''}
-        <div class="install-banner" id="install-banner" style="display:none;">
-          <span>Install this app to your home screen for the full native feel.</span>
-          <button class="btn btn-primary btn-sm" id="install-btn">Install</button>
-        </div>
         ${renderTopbar()}
         <div id="page-content">${renderPage()}</div>
       </div>
     </div>
   `;
   attachHandlers();
-  if(state.page==='dashboard') requestAnimationFrame(renderCharts);
 }
 
 function renderSidebar(){
   const items = [
-    ['dashboard','Dashboard', iconGrid()],
     ['register','Meetings Register', iconList()],
-    ['followups','Follow-ups', iconFlag()],
+    ['reports','Reports', iconChart()],
     ['members','Members', iconUsers()],
   ];
   return `
     <div class="sidebar ${state.sidebarOpen?'open':''}">
       <div class="brand">
-        <div class="brand-mark">R</div>
-        <div class="brand-text"><div class="t1">RCNMW</div><div class="t2">Call Meetings Register</div></div>
+        <div class="brand-mark"><img src="./logo.png" alt="RCNMW logo"></div>
+        <div class="brand-text"><div class="t1">RCNMW</div><div class="t2">Meetings Register</div></div>
       </div>
       ${items.map(([key,label,icon])=>`
         <div class="navitem ${state.page===key?'active':''}" data-nav="${key}">${icon}<span>${label}</span></div>
@@ -503,7 +314,7 @@ function renderSidebar(){
 }
 
 function renderTopbar(){
-  const titles = { dashboard:['Dashboard','Overview of all ministry meetings'], register:['Meetings Register','Capture and manage every meeting'], followups:['Follow-up Tracker','Stay on top of action items'], members:['Members','Manage participants'] };
+  const titles = { register:['Meetings Register','Capture and manage every meeting'], reports:['Reports','Meeting and attendance overview'], members:['Members','Manage participants'] };
   const [title, sub] = titles[state.page] || ['',''];
   return `
     <div class="topbar">
@@ -512,7 +323,7 @@ function renderTopbar(){
         <div><div class="page-title">${title}</div><div class="page-sub">${sub}</div></div>
       </div>
       <div class="topbar-right">
-        <span class="sync-pill"><span class="dot ${state.synced===true?'':'off'}"></span>${state.synced===true?'Synced':(state.synced==='local'?'⚠️ Local only (not synced)':'Connecting…')}</span>
+        <span class="sync-pill"><span class="dot ${state.synced?'':'off'}"></span>${state.synced?'Synced':'Connecting…'}</span>
         ${state.page==='register' && state.unlocked ? `<button class="btn btn-gold btn-sm" id="new-meeting-btn">+ Register Meeting</button>` : ''}
       </div>
     </div>
@@ -520,85 +331,9 @@ function renderTopbar(){
 }
 
 function renderPage(){
-  if(state.page==='dashboard') return renderDashboard();
-  if(state.page==='register') return renderRegister();
-  if(state.page==='followups') return renderFollowups();
   if(state.page==='members') return renderMembers();
-  return '';
-}
-
-/* ============================= DASHBOARD ============================= */
-function renderDashboard(){
-  const k = computeKPIs();
-  const kpis = [
-    ['Meetings Today', k.meetingsToday, var_grad('rcn-blue','rcn-blue-light'), iconCalendarDay()],
-    ['Upcoming Meetings', k.upcoming, var_grad('info','rcn-blue-light'), iconClock()],
-    ['Completed', k.completed, var_grad('success','success'), iconCheck()],
-    ['Follow-ups Due', k.followUpsDue, var_grad('warning','warning'), iconFlag()],
-    ['Active Ministries', k.activeMinistries, var_grad('rcn-gold','rcn-gold'), iconUsers()],
-    ['This Month', k.monthlyCount, var_grad('rcn-navy','rcn-blue'), iconGrid()],
-  ];
-  const catCounts = computeCategoryBreakdown();
-  const maxCat = Math.max(1, ...Object.values(catCounts));
-  const recent = [...state.meetings].sort((a,b)=> (b.date||'').localeCompare(a.date||'')).slice(0,6);
-
-  return `
-    <div class="kpi-grid">
-      ${kpis.map(([lbl,num,grad,icon])=>`
-        <div class="kpi">
-          <div class="kpi-icon" style="background:${grad};">${icon}</div>
-          <div class="kpi-num">${num}</div>
-          <div class="kpi-lbl">${lbl}</div>
-        </div>
-      `).join('')}
-    </div>
-    <div class="grid-2">
-      <div class="glass card">
-        <h2>Monthly Meeting Trend</h2>
-        <p class="card-sub">Meetings registered over the last 6 months</p>
-        <div class="chart-wrap"><canvas id="trend-canvas"></canvas></div>
-      </div>
-      <div class="glass card">
-        <h2>Meeting Categories</h2>
-        <p class="card-sub">Distribution by type</p>
-        ${CATEGORIES.map(c=>`
-          <div class="cat-bar">
-            <div class="cat-bar-head"><span>${c}</span><span class="row-meta">${catCounts[c]}</span></div>
-            <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${(catCounts[c]/maxCat*100)}%"></div></div>
-          </div>
-        `).join('')}
-      </div>
-    </div>
-    <div class="glass card">
-      <h2>Recent Activity</h2>
-      <p class="card-sub">Latest registered meetings</p>
-      ${recent.length===0 ? '<div class="empty">No meetings registered yet.</div>' : `
-        <table><thead><tr><th>Meeting</th><th>Category</th><th>Date</th><th>Status</th></tr></thead>
-        <tbody>${recent.map(m=>`
-          <tr data-open-meeting="${m.id}">
-            <td class="row-title">${escapeHtml(m.title||'Untitled')}</td>
-            <td class="row-meta">${escapeHtml(m.category)}</td>
-            <td class="row-meta">${fmtDate(m.date)}</td>
-            <td><span class="badge ${statusClass(m.status)}">${m.status}</span></td>
-          </tr>
-        `).join('')}</tbody></table>
-      `}
-    </div>
-  `;
-}
-function var_grad(a,b){ return `linear-gradient(135deg, var(--${a}), var(--${b}))`; }
-
-function renderCharts(){
-  const trendData = computeMonthlyTrend();
-  const trendCanvas = document.getElementById('trend-canvas');
-  if(trendCanvas && window.Chart){
-    if(trendChart) trendChart.destroy();
-    trendChart = new Chart(trendCanvas, {
-      type:'bar',
-      data:{ labels: trendData.map(d=>d.label), datasets:[{ data: trendData.map(d=>d.count), backgroundColor:'rgba(27,75,143,0.75)', borderRadius:8, maxBarThickness:36 }]},
-      options:{ plugins:{legend:{display:false}}, scales:{ y:{beginAtZero:true, ticks:{stepSize:1, precision:0}, grid:{color:'rgba(14,42,82,0.06)'}}, x:{grid:{display:false}} }, responsive:true, maintainAspectRatio:false }
-    });
-  }
+  if(state.page==='reports') return renderReports();
+  return renderRegister();
 }
 
 /* ============================= MEETINGS REGISTER ============================= */
@@ -614,21 +349,17 @@ function renderRegister(){
       </div>
       ${list.length===0 ? `<div class="empty">No meetings match. ${state.unlocked ? 'Click "Register Meeting" above to add one.' : ''}</div>` : `
         <table>
-          <thead><tr><th>Meeting</th><th>Category</th><th>Date</th><th>Facilitator</th><th>Ministry</th><th>Status</th><th>Follow-up</th></tr></thead>
+          <thead><tr><th>Meeting</th><th>Category</th><th>Date</th><th>Facilitator</th><th>Status</th></tr></thead>
           <tbody>
-            ${list.map(m=>{
-              const fu = m.followUpRequired ? (!m.followUpDone && m.followUpDate && m.followUpDate<todayISO() ? '<span class="badge fu-overdue">Overdue</span>' : '<span class="badge fu-yes">Required</span>') : '<span class="row-meta">—</span>';
-              return `
+            ${list.map(m=>`
               <tr data-open-meeting="${m.id}">
                 <td><div class="row-title">${escapeHtml(m.title||'Untitled')}</div><div class="row-meta">${escapeHtml(m.venue||'')}</div></td>
                 <td class="row-meta">${escapeHtml(m.category)}</td>
                 <td class="row-meta">${fmtDate(m.date)}</td>
                 <td class="row-meta">${escapeHtml(m.facilitator||'—')}</td>
-                <td class="row-meta">${escapeHtml(m.ministry||'—')}</td>
                 <td><span class="badge ${statusClass(m.status)}">${m.status}</span></td>
-                <td>${fu}</td>
-              </tr>`;
-            }).join('')}
+              </tr>
+            `).join('')}
           </tbody>
         </table>
       `}
@@ -660,11 +391,7 @@ function renderMeetingModal(m){
         </div>
         ${m.objective ? `<div class="field"><div class="row-meta">Objective</div><div>${escapeHtml(m.objective)}</div></div>` : ''}
         ${m.remarks ? `<div class="field"><div class="row-meta">Remarks</div><div>${escapeHtml(m.remarks)}</div></div>` : ''}
-        ${m.followUpRequired ? `
-          <div class="field" style="display:flex;align-items:center;justify-content:space-between;">
-            <div><div class="row-meta">Follow-up due ${fmtDate(m.followUpDate)}</div></div>
-            ${state.unlocked ? `<button class="btn btn-sm ${m.followUpDone?'btn-ghost':'btn-gold'}" data-toggle-fu="${m.id}">${m.followUpDone?'Mark not done':'Mark done'}</button>` : (m.followUpDone?'<span class="badge completed">Done</span>':'<span class="badge fu-yes">Pending</span>')}
-          </div>` : ''}
+        ${m.followUpRequired ? `<div class="field"><div class="row-meta">Follow-up due ${fmtDate(m.followUpDate)}</div></div>` : ''}
 
         <h2 style="margin-top:16px;">Participants &amp; Attendance</h2>
         ${state.members.length===0 ? '<div class="empty">No members added yet.</div>' : `
@@ -734,32 +461,6 @@ function renderMeetingForm(m){
   `;
 }
 
-/* ============================= FOLLOW-UPS ============================= */
-function renderFollowups(){
-  const today = todayISO();
-  const flagged = state.meetings.filter(m=>m.followUpRequired);
-  const overdue = flagged.filter(m=>!m.followUpDone && m.followUpDate && m.followUpDate<today);
-  const upcomingFu = flagged.filter(m=>!m.followUpDone && (!m.followUpDate || m.followUpDate>=today));
-  const done = flagged.filter(m=>m.followUpDone);
-
-  const section = (title, items, badgeClass) => `
-    <div class="glass card">
-      <h2>${title} (${items.length})</h2>
-      ${items.length===0 ? '<div class="empty">Nothing here.</div>' : items.map(m=>`
-        <div class="fu-card">
-          <div class="fu-head">
-            <span data-open-meeting="${m.id}" style="cursor:pointer;">${escapeHtml(m.title||'Untitled')}</span>
-            <span class="badge ${badgeClass}">${fmtDate(m.followUpDate)}</span>
-          </div>
-          <div class="row-meta">${escapeHtml(m.facilitator||'—')} · ${escapeHtml(m.ministry||'—')}</div>
-          ${state.unlocked ? `<button class="btn btn-ghost btn-sm" style="margin-top:8px;" data-toggle-fu="${m.id}">${m.followUpDone?'Mark not done':'Mark done'}</button>` : ''}
-        </div>
-      `).join('')}
-    </div>
-  `;
-  return section('Overdue', overdue, 'fu-overdue') + section('Upcoming', upcomingFu, 'fu-yes') + section('Completed', done, 'completed');
-}
-
 /* ============================= MEMBERS ============================= */
 function renderMembers(){
   const addForm = state.unlocked ? `
@@ -772,7 +473,7 @@ function renderMembers(){
     </div>
     <div class="glass card">
       <h2>Bulk add members</h2>
-      <p class="card-sub">Paste one name per line.</p>
+      <p class="row-meta" style="margin-bottom:8px;">Paste one name per line.</p>
       <textarea id="bulk-member-input" placeholder="Jane Doe
 John Smith"></textarea>
       <div style="margin-top:10px;"><button class="btn btn-primary" id="bulk-add-btn">Add all</button></div>
@@ -793,17 +494,110 @@ John Smith"></textarea>
   `;
 }
 
-/* ============================= ICONS (inline SVG, stroke-based) ============================= */
+/* ============================= REPORTS ============================= */
+function computeAttendanceStats(){
+  const totalMeetings = state.meetings.length;
+  const perMember = {};
+  state.members.forEach(m => perMember[m.id] = { present: 0, total: 0 });
+  state.meetings.forEach(meeting => {
+    const att = state.attendance[meeting.id] || {};
+    state.members.forEach(m => {
+      if (att[m.id] === 'present' || att[m.id] === 'absent') {
+        perMember[m.id].total += 1;
+        if (att[m.id] === 'present') perMember[m.id].present += 1;
+      }
+    });
+  });
+  return { totalMeetings, perMember };
+}
+
+function renderReports(){
+  const { totalMeetings, perMember } = computeAttendanceStats();
+  const sortedMeetings = [...state.meetings].sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+  const totalPresentAcrossAll = Object.values(perMember).reduce((a,p)=>a+p.present,0);
+  const totalPossible = totalMeetings * state.members.length;
+  const avgAttendance = totalPossible ? Math.round(100*totalPresentAcrossAll/totalPossible) : 0;
+
+  const statCards = `
+    <div class="field-row-3" style="margin-bottom:16px;">
+      <div class="glass card" style="margin-bottom:0;text-align:center;">
+        <div style="font-size:24px;font-weight:800;color:var(--rcn-navy);">${totalMeetings}</div>
+        <div class="row-meta">Meetings held</div>
+      </div>
+      <div class="glass card" style="margin-bottom:0;text-align:center;">
+        <div style="font-size:24px;font-weight:800;color:var(--rcn-navy);">${state.members.length}</div>
+        <div class="row-meta">Members tracked</div>
+      </div>
+      <div class="glass card" style="margin-bottom:0;text-align:center;">
+        <div style="font-size:24px;font-weight:800;color:var(--rcn-red);">${avgAttendance}%</div>
+        <div class="row-meta">Average attendance</div>
+      </div>
+    </div>
+  `;
+
+  const memberRows = state.members.length===0 ? '<div class="empty">No members yet.</div>' :
+    [...state.members].sort((a,b)=>{
+      const pa = perMember[a.id], pb = perMember[b.id];
+      const ra = pa.total ? pa.present/pa.total : -1;
+      const rb = pb.total ? pb.present/pb.total : -1;
+      return rb - ra;
+    }).map(m=>{
+      const s = perMember[m.id] || { present:0, total:0 };
+      const pct = s.total ? Math.round(100*s.present/s.total) : 0;
+      return `
+        <div style="margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;">
+            <span class="row-title">${escapeHtml(m.name)}</span>
+            <span class="row-meta">${s.present}/${s.total} meetings (${pct}%)</span>
+          </div>
+          <div style="height:7px;border-radius:99px;background:rgba(27,75,143,0.09);overflow:hidden;">
+            <div style="height:100%;width:${pct}%;border-radius:99px;background:linear-gradient(90deg,var(--rcn-navy),var(--rcn-red));"></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+  const meetingRows = sortedMeetings.length===0 ? '<div class="empty">No meetings recorded yet.</div>' :
+    sortedMeetings.map(meeting=>{
+      const att = state.attendance[meeting.id] || {};
+      const present = state.members.filter(m=>att[m.id]==='present');
+      const absent = state.members.filter(m=>att[m.id]==='absent');
+      return `
+        <div style="border-bottom:1px solid var(--line);padding:12px 0;">
+          <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;margin-bottom:6px;">
+            <span>${escapeHtml(meeting.title||'Untitled')}</span>
+            <span class="row-meta" style="font-weight:600;">${fmtDate(meeting.date)}</span>
+          </div>
+          <div class="row-meta" style="margin-bottom:6px;">${present.length} present · ${absent.length} absent · ${state.members.length - present.length - absent.length} not marked</div>
+          <div>
+            ${present.map(m=>`<span class="badge completed" style="margin:2px 4px 0 0;">${escapeHtml(m.name)}</span>`).join('')}
+            ${absent.map(m=>`<span class="badge cancelled" style="margin:2px 4px 0 0;">${escapeHtml(m.name)}</span>`).join('')}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+  return `
+    ${statCards}
+    <div class="glass card">
+      <h2>Attendance by member</h2>
+      <p class="row-meta" style="margin-bottom:14px;">Sorted from highest to lowest attendance rate.</p>
+      ${memberRows}
+    </div>
+    <div class="glass card">
+      <h2>Meeting-by-meeting attendance</h2>
+      ${meetingRows}
+    </div>
+  `;
+}
+
+/* ============================= ICONS ============================= */
 function ic(path){ return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`; }
-function iconGrid(){ return ic('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>'); }
 function iconList(){ return ic('<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1.4"/><circle cx="4" cy="12" r="1.4"/><circle cx="4" cy="18" r="1.4"/>'); }
-function iconFlag(){ return ic('<path d="M4 21V4"/><path d="M4 4h13l-2.5 4L17 12H4"/>'); }
 function iconUsers(){ return ic('<circle cx="8" cy="8" r="3.2"/><path d="M2.5 20c0-3.3 2.4-6 5.5-6s5.5 2.7 5.5 6"/><circle cx="17" cy="9" r="2.6"/><path d="M15 20c.3-2.7 2-5 4-5.5"/>'); }
 function iconMenu(){ return ic('<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>'); }
 function iconSearch(){ return ic('<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.6" y2="16.6"/>'); }
-function iconCalendarDay(){ return ic('<rect x="3" y="4" width="18" height="17" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/>'); }
-function iconClock(){ return ic('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>'); }
-function iconCheck(){ return ic('<path d="M4 12l5 5L20 6"/>'); }
+function iconChart(){ return ic('<line x1="4" y1="20" x2="20" y2="20"/><rect x="6" y="12" width="3" height="6"/><rect x="11" y="7" width="3" height="11"/><rect x="16" y="3" width="3" height="15"/>'); }
 
 /* ============================= HANDLERS ============================= */
 function attachHandlers(){
@@ -815,7 +609,13 @@ function attachHandlers(){
   const lockBtn = document.getElementById('lock-btn'); if(lockBtn) lockBtn.onclick = lock;
 
   const searchInput = document.getElementById('search-input');
-  if(searchInput){ searchInput.oninput = ()=>{ state.search = searchInput.value; render(); document.getElementById('search-input').focus(); document.getElementById('search-input').selectionStart = document.getElementById('search-input').value.length; }; }
+  if(searchInput){
+    searchInput.oninput = ()=>{
+      state.search = searchInput.value; render();
+      const el = document.getElementById('search-input');
+      el.focus(); el.selectionStart = el.value.length;
+    };
+  }
   const sortBtn = document.getElementById('sort-toggle-btn'); if(sortBtn) sortBtn.onclick = ()=>{ state.sortDesc = !state.sortDesc; render(); };
 
   const newMeetingBtn = document.getElementById('new-meeting-btn'); if(newMeetingBtn) newMeetingBtn.onclick = ()=>{ state.editingMeetingId='new'; render(); };
@@ -824,7 +624,6 @@ function attachHandlers(){
   document.querySelectorAll('[data-close-form]').forEach(el=> el.onclick = ()=>{ state.editingMeetingId = null; render(); });
   document.querySelectorAll('[data-edit-meeting]').forEach(el=> el.onclick = ()=>{ state.editingMeetingId = el.getAttribute('data-edit-meeting'); state.openMeetingId=null; render(); });
   document.querySelectorAll('[data-delete-meeting]').forEach(el=> el.onclick = ()=>{ if(confirm('Delete this meeting?')) deleteMeeting(el.getAttribute('data-delete-meeting')); });
-  document.querySelectorAll('[data-toggle-fu]').forEach(el=> el.onclick = ()=> toggleFollowUpDone(el.getAttribute('data-toggle-fu')));
 
   document.querySelectorAll('[data-save-meeting]').forEach(el=> el.onclick = ()=>{
     const id = el.getAttribute('data-save-meeting');
@@ -860,30 +659,11 @@ function attachHandlers(){
   const bulkAddBtn = document.getElementById('bulk-add-btn');
   if(bulkAddBtn) bulkAddBtn.onclick = ()=>{ const t=document.getElementById('bulk-member-input'); bulkAddMembers(t.value); t.value=''; };
   document.querySelectorAll('[data-remove-member]').forEach(btn=> btn.onclick = ()=> removeMember(btn.getAttribute('data-remove-member')));
-
-  const installBtn = document.getElementById('install-btn');
-  if(installBtn) installBtn.onclick = async ()=>{
-    if(!deferredInstallPrompt) return;
-    deferredInstallPrompt.prompt();
-    await deferredInstallPrompt.userChoice;
-    deferredInstallPrompt = null;
-    document.getElementById('install-banner').style.display='none';
-  };
 }
-
-window.addEventListener('beforeinstallprompt', (e)=>{
-  e.preventDefault(); deferredInstallPrompt = e;
-  const banner = document.getElementById('install-banner');
-  if(banner){ banner.style.display='flex'; }
-});
 
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{ navigator.serviceWorker.register('./sw.js').catch(err=>console.error('SW registration failed', err)); });
 }
-
-window.addEventListener('load', ()=>{
-  if(state.page==='dashboard') requestAnimationFrame(renderCharts);
-});
 
 loadAll();
 </script>
