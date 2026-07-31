@@ -1,10 +1,11 @@
-const CACHE_NAME = 'rcnmw-meetings-v3';
+const CACHE_NAME = 'rcnmw-register-v3';
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
   './icon-192.png',
-  './icon-512.png'
+  './icon-512.png',
+  './logo.png'
 ];
 
 self.addEventListener('install', event => {
@@ -24,9 +25,6 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-  // Only handle same-origin requests (this app's own files).
-  // Cross-origin requests (Firebase, fonts, Chart.js, etc.) are left
-  // entirely to the browser's normal network handling.
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
 

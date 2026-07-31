@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RCNMW Call Meetings Register</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="RCNMW Register">
+<meta name="theme-color" content="#1A1836">
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --rcn-blue:#1B4B8F;
+    --rcn-blue-light:#3D7BE0;
+    --rcn-navy:#1A1836;
+    --rcn-red:#D6362A;
+    --rcn-red-light:#EA5D3F;
+    --rcn-gold:#C9A227;
+    --success:#16A34A;
+    --warning:#D97706;
+    --danger:#DC2626;
+    --ink:#0E1B2E;
+    --muted:#5B6B85;
+    --glass-bg:rgba(255,255,255,0.6);
+    --glass-bg-strong:rgba(255,255,255,0.8);
+    --glass-border:rgba(255,255,255,0.7);
+    --line:rgba(14,42,82,0.08);
+    --radius-lg:22px;
+    --radius-md:16px;
+    --radius-sm:11px;
+    --shadow-glass:0 8px 32px rgba(14,42,82,0.10), 0 1.5px 0 rgba(255,255,255,0.6) inset;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    color:var(--ink);
+    background:
+      radial-gradient(1200px 600px at 85% -10%, rgba(61,123,224,0.18), transparent 60%),
+      radial-gradient(900px 500px at -10% 10%, rgba(201,162,39,0.10), transparent 55%),
+      linear-gradient(160deg,#EAF2FF 0%, #F5F8FF 45%, #FFFFFF 100%);
+    min-height:100vh;
+    padding-top:env(safe-area-inset-top);
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  button{font-family:inherit;border:none;cursor:pointer;}
+  input,select,textarea{font-family:inherit;}
+
+  .shell{display:flex;min-height:100vh;}
+  .sidebar{
+    width:210px;flex-shrink:0;padding:22px 14px;
+    background:var(--glass-bg);
+    backdrop-filter:blur(28px) saturate(160%);
+    -webkit-backdrop-filter:blur(28px) saturate(160%);
+    border-right:1px solid var(--glass-border);
+    display:flex;flex-direction:column;gap:6px;
+    position:sticky;top:0;height:100vh;overflow-y:auto;
+    transition:transform .25s ease;
+    z-index:30;
+  }
+  .brand{display:flex;align-items:center;gap:10px;padding:8px 10px 22px;}
+  .brand-mark{
+    width:44px;height:44px;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .brand-mark img{width:100%;height:100%;object-fit:contain;}
+  .brand-text{line-height:1.15;}
+  .brand-text .t1{font-weight:800;font-size:13.5px;letter-spacing:.2px;color:var(--rcn-navy);}
+  .brand-text .t2{font-size:10px;color:var(--muted);font-weight:500;}
+  .navitem{
+    display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:var(--radius-sm);
+    font-size:13.5px;font-weight:600;color:var(--muted);cursor:pointer;user-select:none;
+  }
+  .navitem svg{width:18px;height:18px;flex-shrink:0;}
+  .navitem:hover{background:rgba(214,54,42,0.06);color:var(--rcn-red);}
+  .navitem.active{
+    background:linear-gradient(135deg,var(--rcn-navy),var(--rcn-red));
+    color:#fff;box-shadow:0 6px 16px rgba(26,24,54,0.3);
+  }
+  .sidebar-footer{margin-top:auto;padding:10px;font-size:11px;color:var(--muted);}
+
+  .main{flex:1;min-width:0;padding:20px 22px 60px;}
+  .topbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:space-between;margin-bottom:20px;}
+  .page-title{font-size:21px;font-weight:800;letter-spacing:-.2px;}
+  .page-sub{font-size:12.5px;color:var(--muted);margin-top:2px;}
+  .topbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .menu-toggle{display:none;width:38px;height:38px;border-radius:10px;background:var(--glass-bg-strong);border:1px solid var(--glass-border);align-items:center;justify-content:center;}
+
+  .glass{background:var(--glass-bg);backdrop-filter:blur(22px) saturate(160%);-webkit-backdrop-filter:blur(22px) saturate(160%);border:1px solid var(--glass-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-glass);}
+  .card{padding:18px 20px;margin-bottom:16px;}
+  .card h2{font-size:14.5px;font-weight:700;margin:0 0 4px;}
+
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px;}
+  .search-wrap{position:relative;flex:1;min-width:200px;}
+  .search-wrap svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--muted);}
+  input[type=text],input[type=date],input[type=time],select,textarea{
+    padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:13.5px;
+    background:rgba(255,255,255,0.85);color:var(--ink);width:100%;
+  }
+  .search-wrap input{padding-left:34px;}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--rcn-blue-light);outline-offset:1px;}
+  textarea{resize:vertical;min-height:70px;font-family:inherit;}
+  .btn{padding:10px 16px;border-radius:10px;font-size:13px;font-weight:700;}
+  .btn:active{transform:scale(.97);}
+  .btn-primary{background:linear-gradient(135deg,var(--rcn-blue),var(--rcn-blue-light));color:#fff;box-shadow:0 6px 16px rgba(27,75,143,0.3);}
+  .btn-gold{background:linear-gradient(135deg,var(--rcn-red-light),var(--rcn-red));color:#fff;box-shadow:0 6px 16px rgba(214,54,42,0.35);}
+  .btn-ghost{background:rgba(255,255,255,0.6);color:var(--muted);border:1px solid var(--line);}
+  .btn-ghost:hover{color:var(--danger);border-color:var(--danger);}
+  .btn-sm{padding:7px 11px;font-size:12px;}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  thead th{text-align:left;padding:10px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;border-bottom:1px solid var(--line);}
+  tbody tr{cursor:pointer;}
+  tbody tr:hover{background:rgba(27,75,143,0.05);}
+  tbody td{padding:12px;border-bottom:1px solid var(--line);vertical-align:middle;}
+  .row-title{font-weight:700;}
+  .row-meta{font-size:11px;color:var(--muted);}
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:4px 9px;border-radius:99px;}
+  .badge.upcoming{background:#E6F0FF;color:var(--rcn-blue);}
+  .badge.completed{background:#E3F8EA;color:var(--success);}
+  .badge.cancelled{background:#FBE7E7;color:var(--danger);}
+  .badge.postponed{background:#FFF3DC;color:var(--warning);}
+  .badge.inprogress{background:#E4F6FC;color:#0EA5E9;}
+  .badge.awaiting{background:#F3E9FF;color:#7B3FE4;}
+  .badge.closed{background:#EDEFF3;color:var(--muted);}
+  .empty{font-size:13px;color:var(--muted);padding:26px 0;text-align:center;}
+
+  .modal-backdrop{position:fixed;inset:0;background:rgba(14,27,46,0.45);backdrop-filter:blur(4px);display:flex;align-items:flex-start;justify-content:center;padding:26px 14px;overflow-y:auto;z-index:100;}
+  .modal{width:100%;max-width:640px;background:rgba(255,255,255,0.94);backdrop-filter:blur(24px);border-radius:var(--radius-lg);border:1px solid var(--glass-border);box-shadow:0 20px 60px rgba(14,27,46,0.35);padding:22px 24px 24px;}
+  .modal-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;}
+  .modal-head h2{font-size:17px;margin:0;}
+  .modal-close{width:30px;height:30px;border-radius:9px;background:rgba(0,0,0,0.05);flex-shrink:0;font-size:15px;color:var(--muted);}
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:11.5px;font-weight:700;color:var(--muted);margin-bottom:5px;}
+  .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .field-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
+  .check-row{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:10px;}
+  .check-row input{width:16px;height:16px;}
+
+  .att-row{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);gap:8px;}
+  .att-row:last-child{border-bottom:none;}
+  .status-btns{display:flex;gap:6px;flex-shrink:0;}
+  .status-btn{padding:6px 12px;border-radius:8px;font-size:11.5px;font-weight:700;border:1px solid var(--line);background:#fff;color:var(--muted);}
+  .status-btn.present.active{background:var(--success);border-color:var(--success);color:#fff;}
+  .status-btn.absent.active{background:var(--danger);border-color:var(--danger);color:#fff;}
+
+  .sync-pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--muted);padding:6px 10px;border-radius:99px;background:var(--glass-bg-strong);border:1px solid var(--glass-border);}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--success);}
+  .dot.off{background:#9aa5b6;}
+  .setup-banner{background:#FBE7E7;border:1px solid #f0a5a5;color:#8a2c2c;font-size:12.5px;padding:11px 15px;border-radius:12px;margin-bottom:16px;}
+
+  ::-webkit-scrollbar{width:9px;height:9px;}
+  ::-webkit-scrollbar-thumb{background:rgba(27,75,143,0.22);border-radius:99px;}
+
+  @media(max-width:760px){
+    .menu-toggle{display:flex;}
+    .sidebar{position:fixed;left:0;top:0;transform:translateX(-100%);width:230px;}
+    .sidebar.open{transform:translateX(0);}
+    .field-row,.field-row-3{grid-template-columns:1fr;}
+    table{font-size:12px;}
+    thead th:nth-child(4),tbody td:nth-child(4){display:none;}
+  }
+</style>
+</head>
+<body>
+<div id="app"><div class="empty" style="padding:60px;">Loading RCNMW Meetings Register…</div></div>
+
+<script>
+const CONFIG = {
+  apiKey: "AIzaSyCSEzkdAo3D2oJ-qrMOFgLtidhR4n6GcJY",
+  authDomain: "rcnmw-callregister.firebaseapp.com",
+  projectId: "rcnmw-callregister",
+  storageBucket: "rcnmw-callregister.firebasestorage.app",
+  messagingSenderId: "349024243223",
+  appId: "1:349024243223:web:cb1c431b6c0604486d9652"
+  }
+};
+
+const CATEGORIES = ['Prayer Call','Leadership Meeting','Follow-up Meeting','Community Engagement','General Meeting'];
+const STATUSES = ['Upcoming','In Progress','Completed','Cancelled','Postponed','Awaiting Follow-up','Closed'];
+const PRIORITIES = ['Low','Medium','High'];
+
+let state = {
+  members: [], meetings: [], attendance: {},
+  page: 'register',
+  unlocked: false, synced: false,
+  search: '', sortDesc: true,
+  openMeetingId: null, editingMeetingId: null,
+  sidebarOpen: false
+};
+let db = null, docRef = null;
+
+/* ============================= FIREBASE (single reliable source) ============================= */
+function initFirebase() {
+  try {
+    firebase.initializeApp(CONFIG.FIREBASE);
+    db = firebase.firestore();
+    db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+    docRef = db.collection('attendance-tracker').doc('shared');
+    docRef.onSnapshot(snap => {
+      const data = snap.data() || {};
+      state.members = data.members || [];
+      state.meetings = data.meetings || [];
+      state.attendance = data.attendance || {};
+      state.synced = true;
+      render();
+    }, err => { console.error('Firestore sync error', err); state.synced = false; render(); });
+  } catch (e) { console.error('Firebase init failed', e); state.synced = false; render(); }
+}
+function saveState() {
+  if (!docRef) return;
+  docRef.set({ members: state.members, meetings: state.meetings, attendance: state.attendance }, { merge: false })
+    .catch(err => console.error('Save failed', err));
+}
+function loadAll() { initFirebase(); render(); }
+
+/* ============================= HELPERS ============================= */
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function todayISO() { return new Date().toISOString().slice(0,10); }
+function escapeHtml(str) { return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmtDate(d) { if(!d) return '—'; const dt = new Date(d+'T00:00:00'); return dt.toLocaleDateString(undefined,{day:'2-digit',month:'short',year:'numeric'}); }
+function statusClass(s){ return ({'Upcoming':'upcoming','In Progress':'inprogress','Completed':'completed','Cancelled':'cancelled','Postponed':'postponed','Awaiting Follow-up':'awaiting','Closed':'closed'})[s] || 'upcoming'; }
+function navigate(page){ state.page = page; state.sidebarOpen = false; render(); }
+function toggleSidebar(){ state.sidebarOpen = !state.sidebarOpen; render(); }
+function tryUnlock(pin){ if(pin === CONFIG.EDIT_PIN){ state.unlocked = true; render(); } else alert('Incorrect PIN'); }
+function lock(){ state.unlocked = false; render(); }
+
+/* ============================= MEMBER ACTIONS ============================= */
+function addMember(name){ if(!name.trim()) return; state.members.push({id:uid(), name:name.trim()}); saveState(); render(); }
+function bulkAddMembers(text){
+  const names = text.split('\n').map(n=>n.trim()).filter(Boolean);
+  if(!names.length) return;
+  const existing = new Set(state.members.map(m=>m.name.toLowerCase()));
+  let added=0, skipped=0;
+  names.forEach(name=>{
+    if(existing.has(name.toLowerCase())){ skipped++; return; }
+    state.members.push({id:uid(), name}); existing.add(name.toLowerCase()); added++;
+  });
+  saveState(); render();
+  if(skipped>0) alert(added+' added, '+skipped+' skipped as duplicates.');
+}
+function removeMember(id){ state.members = state.members.filter(m=>m.id!==id); saveState(); render(); }
+
+/* ============================= MEETING ACTIONS ============================= */
+function blankMeeting(){
+  return { id:uid(), title:'', category:CATEGORIES[0], date:todayISO(), startTime:'', endTime:'',
+    venue:'', mode:'Physical', facilitator:'', ministry:'', objective:'',
+    followUpRequired:false, followUpDate:'', priority:'Medium', status:'Upcoming', remarks:'' };
+}
+function saveMeeting(m){
+  const idx = state.meetings.findIndex(x=>x.id===m.id);
+  if(idx===-1){ state.meetings.unshift(m); state.attendance[m.id] = state.attendance[m.id] || {}; }
+  else { state.meetings[idx] = m; }
+  saveState(); render();
+}
+function deleteMeeting(id){
+  state.meetings = state.meetings.filter(m=>m.id!==id);
+  delete state.attendance[id];
+  if(state.openMeetingId===id) state.openMeetingId=null;
+  saveState(); render();
+}
+function setStatus(meetingId, memberId, status){
+  if(!state.attendance[meetingId]) state.attendance[meetingId]={};
+  state.attendance[meetingId][memberId]=status;
+  saveState(); render();
+}
+
+/* ============================= RENDER ============================= */
+function render(){
+  const app = document.getElementById('app');
+  const needsSetup = CONFIG.FIREBASE.apiKey === 'YOUR_API_KEY';
+  app.innerHTML = `
+    <div class="shell">
+      ${renderSidebar()}
+      <div class="main">
+        ${needsSetup ? `<div class="setup-banner">Cloud sync isn't configured yet — paste your Firebase config into CONFIG.FIREBASE. Data won't sync across devices until then.</div>` : ''}
+        ${renderTopbar()}
+        <div id="page-content">${renderPage()}</div>
+      </div>
+    </div>
+  `;
+  attachHandlers();
+}
+
+function renderSidebar(){
+  const items = [
+    ['register','Meetings Register', iconList()],
+    ['reports','Reports', iconChart()],
+    ['members','Members', iconUsers()],
+  ];
+  return `
+    <div class="sidebar ${state.sidebarOpen?'open':''}">
+      <div class="brand">
+        <div class="brand-mark"><img src="./logo.png" alt="RCNMW logo"></div>
+        <div class="brand-text"><div class="t1">RCNMW</div><div class="t2">Meetings Register</div></div>
+      </div>
+      ${items.map(([key,label,icon])=>`
+        <div class="navitem ${state.page===key?'active':''}" data-nav="${key}">${icon}<span>${label}</span></div>
+      `).join('')}
+      <div class="sidebar-footer">
+        ${state.unlocked ? `<button class="btn btn-ghost btn-sm" id="lock-btn" style="width:100%;">Lock editing</button>`
+          : `<div style="display:flex;gap:6px;">
+               <input type="text" id="pin-input" placeholder="PIN" style="flex:1;">
+               <button class="btn btn-primary btn-sm" id="unlock-btn">Go</button>
+             </div>`}
+      </div>
+    </div>
+  `;
+}
+
+function renderTopbar(){
+  const titles = { register:['Meetings Register','Capture and manage every meeting'], reports:['Reports','Meeting and attendance overview'], members:['Members','Manage participants'] };
+  const [title, sub] = titles[state.page] || ['',''];
+  return `
+    <div class="topbar">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button class="menu-toggle" id="menu-toggle">${iconMenu()}</button>
+        <div><div class="page-title">${title}</div><div class="page-sub">${sub}</div></div>
+      </div>
+      <div class="topbar-right">
+        <span class="sync-pill"><span class="dot ${state.synced?'':'off'}"></span>${state.synced?'Synced':'Connecting…'}</span>
+        ${state.page==='register' && state.unlocked ? `<button class="btn btn-gold btn-sm" id="new-meeting-btn">+ Register Meeting</button>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function renderPage(){
+  if(state.page==='members') return renderMembers();
+  if(state.page==='reports') return renderReports();
+  return renderRegister();
+}
+
+/* ============================= MEETINGS REGISTER ============================= */
+function renderRegister(){
+  let list = state.meetings.filter(m => !state.search || (m.title+' '+m.facilitator+' '+m.ministry).toLowerCase().includes(state.search.toLowerCase()));
+  list = list.sort((a,b)=> state.sortDesc ? (b.date||'').localeCompare(a.date||'') : (a.date||'').localeCompare(b.date||''));
+
+  return `
+    <div class="glass card">
+      <div class="toolbar">
+        <div class="search-wrap">${iconSearch()}<input type="text" id="search-input" placeholder="Search by title, facilitator, or ministry" value="${escapeHtml(state.search)}"></div>
+        <button class="btn btn-ghost btn-sm" id="sort-toggle-btn">Sort: ${state.sortDesc?'Newest first':'Oldest first'}</button>
+      </div>
+      ${list.length===0 ? `<div class="empty">No meetings match. ${state.unlocked ? 'Click "Register Meeting" above to add one.' : ''}</div>` : `
+        <table>
+          <thead><tr><th>Meeting</th><th>Category</th><th>Date</th><th>Facilitator</th><th>Status</th></tr></thead>
+          <tbody>
+            ${list.map(m=>`
+              <tr data-open-meeting="${m.id}">
+                <td><div class="row-title">${escapeHtml(m.title||'Untitled')}</div><div class="row-meta">${escapeHtml(m.venue||'')}</div></td>
+                <td class="row-meta">${escapeHtml(m.category)}</td>
+                <td class="row-meta">${fmtDate(m.date)}</td>
+                <td class="row-meta">${escapeHtml(m.facilitator||'—')}</td>
+                <td><span class="badge ${statusClass(m.status)}">${m.status}</span></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `}
+    </div>
+    ${state.openMeetingId ? renderMeetingModal(state.meetings.find(m=>m.id===state.openMeetingId)) : ''}
+    ${state.editingMeetingId ? renderMeetingForm(state.editingMeetingId==='new' ? blankMeeting() : state.meetings.find(m=>m.id===state.editingMeetingId)) : ''}
+  `;
+}
+
+function renderMeetingModal(m){
+  if(!m) return '';
+  const att = state.attendance[m.id] || {};
+  return `
+    <div class="modal-backdrop" data-close-modal="1">
+      <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-head">
+          <div>
+            <h2>${escapeHtml(m.title||'Untitled meeting')}</h2>
+            <div class="row-meta" style="margin-top:4px;">${escapeHtml(m.category)} · ${fmtDate(m.date)} ${m.startTime?('· '+m.startTime+(m.endTime?'–'+m.endTime:'')):''}</div>
+          </div>
+          <button class="modal-close" data-close-modal="1">✕</button>
+        </div>
+        <span class="badge ${statusClass(m.status)}" style="margin-bottom:14px;display:inline-block;">${m.status}</span>
+        <div class="field-row" style="margin-bottom:14px;">
+          <div><div class="row-meta">Venue</div><div>${escapeHtml(m.venue||'—')} (${escapeHtml(m.mode||'—')})</div></div>
+          <div><div class="row-meta">Facilitator</div><div>${escapeHtml(m.facilitator||'—')}</div></div>
+          <div><div class="row-meta">Ministry</div><div>${escapeHtml(m.ministry||'—')}</div></div>
+          <div><div class="row-meta">Priority</div><div>${escapeHtml(m.priority||'—')}</div></div>
+        </div>
+        ${m.objective ? `<div class="field"><div class="row-meta">Objective</div><div>${escapeHtml(m.objective)}</div></div>` : ''}
+        ${m.remarks ? `<div class="field"><div class="row-meta">Remarks</div><div>${escapeHtml(m.remarks)}</div></div>` : ''}
+        ${m.followUpRequired ? `<div class="field"><div class="row-meta">Follow-up due ${fmtDate(m.followUpDate)}</div></div>` : ''}
+
+        <h2 style="margin-top:16px;">Participants &amp; Attendance</h2>
+        ${state.members.length===0 ? '<div class="empty">No members added yet.</div>' : `
+          <ul style="list-style:none;margin:0;padding:0;">
+            ${state.members.map(mem=>{
+              const status = att[mem.id];
+              const badge = status==='present' ? '<span class="badge completed">Present</span>' : status==='absent' ? '<span class="badge cancelled">Absent</span>' : '<span class="row-meta">Not marked</span>';
+              const controls = state.unlocked ? `
+                <span class="status-btns">
+                  <button class="status-btn present ${status==='present'?'active':''}" data-status-meeting="${m.id}" data-status-member="${mem.id}" data-status-value="present">Present</button>
+                  <button class="status-btn absent ${status==='absent'?'active':''}" data-status-meeting="${m.id}" data-status-member="${mem.id}" data-status-value="absent">Absent</button>
+                </span>` : badge;
+              return `<li class="att-row"><span>${escapeHtml(mem.name)}</span>${controls}</li>`;
+            }).join('')}
+          </ul>
+        `}
+        ${state.unlocked ? `
+          <div style="display:flex;gap:8px;margin-top:18px;">
+            <button class="btn btn-primary btn-sm" data-edit-meeting="${m.id}">Edit meeting</button>
+            <button class="btn btn-ghost btn-sm" data-delete-meeting="${m.id}">Delete meeting</button>
+          </div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function renderMeetingForm(m){
+  const isNew = !state.meetings.find(x=>x.id===m.id);
+  return `
+    <div class="modal-backdrop" data-close-form="1">
+      <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-head">
+          <h2>${isNew?'Register New Meeting':'Edit Meeting'}</h2>
+          <button class="modal-close" data-close-form="1">✕</button>
+        </div>
+        <div class="field"><label>Meeting Title</label><input type="text" id="f-title" value="${escapeHtml(m.title)}" placeholder="e.g. Regional Leadership Call"></div>
+        <div class="field-row">
+          <div class="field"><label>Category</label><select id="f-category">${CATEGORIES.map(c=>`<option ${m.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
+          <div class="field"><label>Status</label><select id="f-status">${STATUSES.map(s=>`<option ${m.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+        </div>
+        <div class="field-row-3">
+          <div class="field"><label>Date</label><input type="date" id="f-date" value="${m.date||''}"></div>
+          <div class="field"><label>Start Time</label><input type="time" id="f-start" value="${m.startTime||''}"></div>
+          <div class="field"><label>End Time</label><input type="time" id="f-end" value="${m.endTime||''}"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Venue</label><input type="text" id="f-venue" value="${escapeHtml(m.venue)}" placeholder="e.g. Blantyre Hub / WhatsApp Call"></div>
+          <div class="field"><label>Mode</label><select id="f-mode"><option ${m.mode==='Physical'?'selected':''}>Physical</option><option ${m.mode==='Online'?'selected':''}>Online</option></select></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Facilitator</label><input type="text" id="f-facilitator" value="${escapeHtml(m.facilitator)}"></div>
+          <div class="field"><label>Ministry</label><input type="text" id="f-ministry" value="${escapeHtml(m.ministry)}" placeholder="e.g. Youth Ministry"></div>
+        </div>
+        <div class="field"><label>Objective</label><textarea id="f-objective">${escapeHtml(m.objective)}</textarea></div>
+        <div class="field-row">
+          <div class="field"><label>Priority</label><select id="f-priority">${PRIORITIES.map(p=>`<option ${m.priority===p?'selected':''}>${p}</option>`).join('')}</select></div>
+          <div class="field"><label>Follow-up Date</label><input type="date" id="f-fudate" value="${m.followUpDate||''}"></div>
+        </div>
+        <div class="check-row"><input type="checkbox" id="f-furequired" ${m.followUpRequired?'checked':''}><label for="f-furequired" style="margin:0;">Follow-up required</label></div>
+        <div class="field"><label>Remarks</label><textarea id="f-remarks">${escapeHtml(m.remarks)}</textarea></div>
+        <div style="display:flex;gap:8px;margin-top:6px;">
+          <button class="btn btn-primary" data-save-meeting="${m.id}">${isNew?'Register Meeting':'Save Changes'}</button>
+          <button class="btn btn-ghost" data-close-form="1">Cancel</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/* ============================= MEMBERS ============================= */
+function renderMembers(){
+  const addForm = state.unlocked ? `
+    <div class="glass card">
+      <h2>Add a member</h2>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="new-member" placeholder="Member name">
+        <button class="btn btn-primary" id="add-member-btn">Add</button>
+      </div>
+    </div>
+    <div class="glass card">
+      <h2>Bulk add members</h2>
+      <p class="row-meta" style="margin-bottom:8px;">Paste one name per line.</p>
+      <textarea id="bulk-member-input" placeholder="Jane Doe
+John Smith"></textarea>
+      <div style="margin-top:10px;"><button class="btn btn-primary" id="bulk-add-btn">Add all</button></div>
+    </div>` : `<div class="glass card"><div class="empty">Unlock editing in the sidebar to add or remove members.</div></div>`;
+
+  return `
+    ${addForm}
+    <div class="glass card">
+      <h2>Members (${state.members.length})</h2>
+      ${state.members.length===0 ? '<div class="empty">No members yet.</div>' : `
+        <ul style="list-style:none;margin:0;padding:0;">
+          ${state.members.map(m=>`
+            <li class="att-row"><span>${escapeHtml(m.name)}</span>${state.unlocked?`<button class="btn btn-ghost btn-sm" data-remove-member="${m.id}">Remove</button>`:''}</li>
+          `).join('')}
+        </ul>
+      `}
+    </div>
+  `;
+}
+
+/* ============================= REPORTS ============================= */
+function computeAttendanceStats(){
+  const totalMeetings = state.meetings.length;
+  const perMember = {};
+  state.members.forEach(m => perMember[m.id] = { present: 0, total: 0 });
+  state.meetings.forEach(meeting => {
+    const att = state.attendance[meeting.id] || {};
+    state.members.forEach(m => {
+      if (att[m.id] === 'present' || att[m.id] === 'absent') {
+        perMember[m.id].total += 1;
+        if (att[m.id] === 'present') perMember[m.id].present += 1;
+      }
+    });
+  });
+  return { totalMeetings, perMember };
+}
+
+function renderReports(){
+  const { totalMeetings, perMember } = computeAttendanceStats();
+  const sortedMeetings = [...state.meetings].sort((a,b)=> (b.date||'').localeCompare(a.date||''));
+  const totalPresentAcrossAll = Object.values(perMember).reduce((a,p)=>a+p.present,0);
+  const totalPossible = totalMeetings * state.members.length;
+  const avgAttendance = totalPossible ? Math.round(100*totalPresentAcrossAll/totalPossible) : 0;
+
+  const statCards = `
+    <div class="field-row-3" style="margin-bottom:16px;">
+      <div class="glass card" style="margin-bottom:0;text-align:center;">
+        <div style="font-size:24px;font-weight:800;color:var(--rcn-navy);">${totalMeetings}</div>
+        <div class="row-meta">Meetings held</div>
+      </div>
+      <div class="glass card" style="margin-bottom:0;text-align:center;">
+        <div style="font-size:24px;font-weight:800;color:var(--rcn-navy);">${state.members.length}</div>
+        <div class="row-meta">Members tracked</div>
+      </div>
+      <div class="glass card" style="margin-bottom:0;text-align:center;">
+        <div style="font-size:24px;font-weight:800;color:var(--rcn-red);">${avgAttendance}%</div>
+        <div class="row-meta">Average attendance</div>
+      </div>
+    </div>
+  `;
+
+  const memberRows = state.members.length===0 ? '<div class="empty">No members yet.</div>' :
+    [...state.members].sort((a,b)=>{
+      const pa = perMember[a.id], pb = perMember[b.id];
+      const ra = pa.total ? pa.present/pa.total : -1;
+      const rb = pb.total ? pb.present/pb.total : -1;
+      return rb - ra;
+    }).map(m=>{
+      const s = perMember[m.id] || { present:0, total:0 };
+      const pct = s.total ? Math.round(100*s.present/s.total) : 0;
+      return `
+        <div style="margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;">
+            <span class="row-title">${escapeHtml(m.name)}</span>
+            <span class="row-meta">${s.present}/${s.total} meetings (${pct}%)</span>
+          </div>
+          <div style="height:7px;border-radius:99px;background:rgba(27,75,143,0.09);overflow:hidden;">
+            <div style="height:100%;width:${pct}%;border-radius:99px;background:linear-gradient(90deg,var(--rcn-navy),var(--rcn-red));"></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+  const meetingRows = sortedMeetings.length===0 ? '<div class="empty">No meetings recorded yet.</div>' :
+    sortedMeetings.map(meeting=>{
+      const att = state.attendance[meeting.id] || {};
+      const present = state.members.filter(m=>att[m.id]==='present');
+      const absent = state.members.filter(m=>att[m.id]==='absent');
+      return `
+        <div style="border-bottom:1px solid var(--line);padding:12px 0;">
+          <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;margin-bottom:6px;">
+            <span>${escapeHtml(meeting.title||'Untitled')}</span>
+            <span class="row-meta" style="font-weight:600;">${fmtDate(meeting.date)}</span>
+          </div>
+          <div class="row-meta" style="margin-bottom:6px;">${present.length} present · ${absent.length} absent · ${state.members.length - present.length - absent.length} not marked</div>
+          <div>
+            ${present.map(m=>`<span class="badge completed" style="margin:2px 4px 0 0;">${escapeHtml(m.name)}</span>`).join('')}
+            ${absent.map(m=>`<span class="badge cancelled" style="margin:2px 4px 0 0;">${escapeHtml(m.name)}</span>`).join('')}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+  return `
+    ${statCards}
+    <div class="glass card">
+      <h2>Attendance by member</h2>
+      <p class="row-meta" style="margin-bottom:14px;">Sorted from highest to lowest attendance rate.</p>
+      ${memberRows}
+    </div>
+    <div class="glass card">
+      <h2>Meeting-by-meeting attendance</h2>
+      ${meetingRows}
+    </div>
+  `;
+}
+
+/* ============================= ICONS ============================= */
+function ic(path){ return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`; }
+function iconList(){ return ic('<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1.4"/><circle cx="4" cy="12" r="1.4"/><circle cx="4" cy="18" r="1.4"/>'); }
+function iconUsers(){ return ic('<circle cx="8" cy="8" r="3.2"/><path d="M2.5 20c0-3.3 2.4-6 5.5-6s5.5 2.7 5.5 6"/><circle cx="17" cy="9" r="2.6"/><path d="M15 20c.3-2.7 2-5 4-5.5"/>'); }
+function iconMenu(){ return ic('<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>'); }
+function iconSearch(){ return ic('<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.6" y2="16.6"/>'); }
+function iconChart(){ return ic('<line x1="4" y1="20" x2="20" y2="20"/><rect x="6" y="12" width="3" height="6"/><rect x="11" y="7" width="3" height="11"/><rect x="16" y="3" width="3" height="15"/>'); }
+
+/* ============================= HANDLERS ============================= */
+function attachHandlers(){
+  document.querySelectorAll('[data-nav]').forEach(el=> el.onclick=()=>navigate(el.getAttribute('data-nav')));
+  const menuToggle = document.getElementById('menu-toggle'); if(menuToggle) menuToggle.onclick = toggleSidebar;
+
+  const unlockBtn = document.getElementById('unlock-btn');
+  if(unlockBtn) unlockBtn.onclick = ()=> tryUnlock(document.getElementById('pin-input').value);
+  const lockBtn = document.getElementById('lock-btn'); if(lockBtn) lockBtn.onclick = lock;
+
+  const searchInput = document.getElementById('search-input');
+  if(searchInput){
+    searchInput.oninput = ()=>{
+      state.search = searchInput.value; render();
+      const el = document.getElementById('search-input');
+      el.focus(); el.selectionStart = el.value.length;
+    };
+  }
+  const sortBtn = document.getElementById('sort-toggle-btn'); if(sortBtn) sortBtn.onclick = ()=>{ state.sortDesc = !state.sortDesc; render(); };
+
+  const newMeetingBtn = document.getElementById('new-meeting-btn'); if(newMeetingBtn) newMeetingBtn.onclick = ()=>{ state.editingMeetingId='new'; render(); };
+  document.querySelectorAll('[data-open-meeting]').forEach(el=> el.onclick = ()=>{ state.openMeetingId = el.getAttribute('data-open-meeting'); render(); });
+  document.querySelectorAll('[data-close-modal]').forEach(el=> el.onclick = ()=>{ state.openMeetingId = null; render(); });
+  document.querySelectorAll('[data-close-form]').forEach(el=> el.onclick = ()=>{ state.editingMeetingId = null; render(); });
+  document.querySelectorAll('[data-edit-meeting]').forEach(el=> el.onclick = ()=>{ state.editingMeetingId = el.getAttribute('data-edit-meeting'); state.openMeetingId=null; render(); });
+  document.querySelectorAll('[data-delete-meeting]').forEach(el=> el.onclick = ()=>{ if(confirm('Delete this meeting?')) deleteMeeting(el.getAttribute('data-delete-meeting')); });
+
+  document.querySelectorAll('[data-save-meeting]').forEach(el=> el.onclick = ()=>{
+    const id = el.getAttribute('data-save-meeting');
+    const base = state.meetings.find(x=>x.id===id) || blankMeeting();
+    const m = Object.assign({}, base, {
+      id, title: document.getElementById('f-title').value,
+      category: document.getElementById('f-category').value,
+      status: document.getElementById('f-status').value,
+      date: document.getElementById('f-date').value,
+      startTime: document.getElementById('f-start').value,
+      endTime: document.getElementById('f-end').value,
+      venue: document.getElementById('f-venue').value,
+      mode: document.getElementById('f-mode').value,
+      facilitator: document.getElementById('f-facilitator').value,
+      ministry: document.getElementById('f-ministry').value,
+      objective: document.getElementById('f-objective').value,
+      priority: document.getElementById('f-priority').value,
+      followUpDate: document.getElementById('f-fudate').value,
+      followUpRequired: document.getElementById('f-furequired').checked,
+      remarks: document.getElementById('f-remarks').value,
+    });
+    if(!m.title.trim()){ alert('Please enter a meeting title.'); return; }
+    state.editingMeetingId = null;
+    saveMeeting(m);
+  });
+
+  document.querySelectorAll('[data-status-meeting]').forEach(btn=>{
+    btn.onclick = ()=> setStatus(btn.getAttribute('data-status-meeting'), btn.getAttribute('data-status-member'), btn.getAttribute('data-status-value'));
+  });
+
+  const addMemberBtn = document.getElementById('add-member-btn');
+  if(addMemberBtn) addMemberBtn.onclick = ()=>{ const i=document.getElementById('new-member'); addMember(i.value); i.value=''; };
+  const bulkAddBtn = document.getElementById('bulk-add-btn');
+  if(bulkAddBtn) bulkAddBtn.onclick = ()=>{ const t=document.getElementById('bulk-member-input'); bulkAddMembers(t.value); t.value=''; };
+  document.querySelectorAll('[data-remove-member]').forEach(btn=> btn.onclick = ()=> removeMember(btn.getAttribute('data-remove-member')));
+}
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('./sw.js').catch(err=>console.error('SW registration failed', err)); });
+}
+
+loadAll();
+</script>
+</body>
+</html>
