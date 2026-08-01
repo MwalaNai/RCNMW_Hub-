@@ -12,6 +12,7 @@
 <meta name="theme-color" content="#1A1836">
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <style>
   :root{
     --rcn-blue:#1B4B8F;
@@ -180,6 +181,15 @@ const CONFIG = {
     storageBucket: "rcnmw-callregister.firebasestorage.app",
     messagingSenderId: "349024243223",
     appId: "1:349024243223:web:cb1c431b6c0604486d9652"
+  },
+  // Optional. Leave as-is to skip automatic email sending — the app will
+  // fall back to opening a pre-filled mailto: link instead. To enable
+  // real one-click sending to multiple recipients, create a free account
+  // at emailjs.com and paste your own IDs here (see CLOUD_SETUP.md).
+  EMAILJS: {
+    publicKey: 'YOUR_EMAILJS_PUBLIC_KEY',
+    serviceId: 'YOUR_EMAILJS_SERVICE_ID',
+    templateId: 'YOUR_EMAILJS_TEMPLATE_ID'
   }
 };
 
@@ -192,7 +202,7 @@ let state = {
   page: 'register',
   unlocked: false, synced: false,
   search: '', sortDesc: true,
-  openMeetingId: null, editingMeetingId: null,
+  openMeetingId: null, editingMeetingId: null, notifyMeetingId: null,
   sidebarOpen: false
 };
 let db = null, docRef = null;
@@ -233,7 +243,11 @@ function tryUnlock(pin){ if(pin === CONFIG.EDIT_PIN){ state.unlocked = true; ren
 function lock(){ state.unlocked = false; render(); }
 
 /* ============================= MEMBER ACTIONS ============================= */
-function addMember(name){ if(!name.trim()) return; state.members.push({id:uid(), name:name.trim()}); saveState(); render(); }
+function addMember(name, phone, email){
+  if(!name.trim()) return;
+  state.members.push({id:uid(), name:name.trim(), phone:(phone||'').trim(), email:(email||'').trim()});
+  saveState(); render();
+}
 function bulkAddMembers(text){
   const names = text.split('\n').map(n=>n.trim()).filter(Boolean);
   if(!names.length) return;
@@ -241,12 +255,18 @@ function bulkAddMembers(text){
   let added=0, skipped=0;
   names.forEach(name=>{
     if(existing.has(name.toLowerCase())){ skipped++; return; }
-    state.members.push({id:uid(), name}); existing.add(name.toLowerCase()); added++;
+    state.members.push({id:uid(), name, phone:'', email:''}); existing.add(name.toLowerCase()); added++;
   });
   saveState(); render();
   if(skipped>0) alert(added+' added, '+skipped+' skipped as duplicates.');
 }
 function removeMember(id){ state.members = state.members.filter(m=>m.id!==id); saveState(); render(); }
+function updateMemberContact(id, field, value){
+  const mem = state.members.find(m=>m.id===id);
+  if(!mem) return;
+  mem[field] = value;
+  saveState();
+}
 
 /* ============================= MEETING ACTIONS ============================= */
 function blankMeeting(){
@@ -270,6 +290,65 @@ function setStatus(meetingId, memberId, status){
   if(!state.attendance[meetingId]) state.attendance[meetingId]={};
   state.attendance[meetingId][memberId]=status;
   saveState(); render();
+}
+
+/* ============================= NOTIFICATIONS ============================= */
+function defaultNotifyMessage(m){
+  const when = fmtDate(m.date) + (m.startTime ? ' at '+m.startTime : '');
+  return `Reminder: "${m.title||'Meeting'}" is scheduled for ${when}`
+    + (m.venue ? ` at ${m.venue}` : '')
+    + (m.objective ? `.\n\nObjective: ${m.objective}` : '.')
+    + `\n\n— RCNMW Meetings Register`;
+}
+function cleanPhoneForWa(phone){
+  // wa.me needs digits only, full international country code, no leading + or 0
+  return String(phone||'').replace(/[^\d]/g,'');
+}
+function waLink(phone, message){
+  const digits = cleanPhoneForWa(phone);
+  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
+}
+function emailConfigured(){
+  return CONFIG.EMAILJS && CONFIG.EMAILJS.publicKey && CONFIG.EMAILJS.publicKey !== 'YOUR_EMAILJS_PUBLIC_KEY';
+}
+function mailtoLink(emails, subject, body){
+  return `mailto:${encodeURIComponent(emails.join(','))}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+async function sendEmailsViaEmailJS(recipients, subject, message){
+  if(typeof emailjs === 'undefined'){ alert('Email service failed to load. Check your internet connection and try again.'); return; }
+  emailjs.init(CONFIG.EMAILJS.publicKey);
+  let sent = 0, failed = 0;
+  for(const r of recipients){
+    try {
+      await emailjs.send(CONFIG.EMAILJS.serviceId, CONFIG.EMAILJS.templateId, {
+        to_email: r.email, to_name: r.name, subject, message
+      });
+      sent++;
+    } catch(e){ console.error('Email send failed for', r.email, e); failed++; }
+  }
+  alert(`Email sent to ${sent} recipient${sent===1?'':'s'}.` + (failed ? ` ${failed} failed — check the console for details.` : ''));
+}
+function sendNotifyEmails(){
+  const m = state.meetings.find(x=>x.id===state.notifyMeetingId);
+  if(!m) return;
+  const subject = 'Reminder: ' + (m.title || 'Meeting');
+  const message = document.getElementById('notify-message')?.value || defaultNotifyMessage(m);
+  const recipients = state.members.filter(mem =>
+    document.querySelector(`[data-notify-check="${mem.id}"]`)?.checked && mem.email
+  );
+  if(recipients.length===0){ alert('No selected recipients have an email address on file.'); return; }
+  if(emailConfigured()){
+    sendEmailsViaEmailJS(recipients, subject, message);
+  } else {
+    window.location.href = mailtoLink(recipients.map(r=>r.email), subject, message);
+  }
+}
+function openWaFor(memberId){
+  const m = state.meetings.find(x=>x.id===state.notifyMeetingId);
+  const mem = state.members.find(x=>x.id===memberId);
+  if(!m || !mem || !mem.phone) return;
+  const message = document.getElementById('notify-message')?.value || defaultNotifyMessage(m);
+  window.open(waLink(mem.phone, message), '_blank');
 }
 
 /* ============================= RENDER ============================= */
@@ -411,10 +490,55 @@ function renderMeetingModal(m){
           </ul>
         `}
         ${state.unlocked ? `
-          <div style="display:flex;gap:8px;margin-top:18px;">
+          <div style="display:flex;gap:8px;margin-top:18px;flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" data-notify-meeting="${m.id}">Notify participants</button>
             <button class="btn btn-primary btn-sm" data-edit-meeting="${m.id}">Edit meeting</button>
             <button class="btn btn-ghost btn-sm" data-delete-meeting="${m.id}">Delete meeting</button>
           </div>` : ''}
+      </div>
+    </div>
+    ${state.notifyMeetingId===m.id ? renderNotifyPanel(m) : ''}
+  `;
+}
+
+function renderNotifyPanel(m){
+  const emailReady = emailConfigured();
+  return `
+    <div class="modal-backdrop" data-close-notify="1">
+      <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-head">
+          <h2>Notify participants</h2>
+          <button class="modal-close" data-close-notify="1">✕</button>
+        </div>
+        <div class="field">
+          <label>Message</label>
+          <textarea id="notify-message" rows="5">${escapeHtml(defaultNotifyMessage(m))}</textarea>
+        </div>
+        ${!emailReady ? `<div class="setup-banner" style="margin-bottom:14px;">Email isn't configured for one-click sending yet — "Email selected" will open your device's email app instead, pre-filled and ready to send. See CLOUD_SETUP.md to enable automatic sending.</div>` : ''}
+        <div class="field">
+          <label>Recipients</label>
+          ${state.members.length===0 ? '<div class="empty">No members yet — add some on the Members page first.</div>' : `
+            <ul style="list-style:none;margin:0;padding:0;max-height:280px;overflow-y:auto;">
+              ${state.members.map(mem=>`
+                <li class="att-row">
+                  <span style="display:flex;align-items:center;gap:8px;">
+                    <input type="checkbox" data-notify-check="${mem.id}" ${(mem.phone||mem.email)?'checked':''} ${(!mem.phone&&!mem.email)?'disabled':''}>
+                    ${escapeHtml(mem.name)}
+                    ${!mem.phone && !mem.email ? '<span class="row-meta">(no contact info)</span>' : ''}
+                  </span>
+                  <span style="display:flex;gap:6px;">
+                    ${mem.phone ? `<button class="btn btn-ghost btn-sm" data-wa-send="${mem.id}">WhatsApp</button>` : ''}
+                  </span>
+                </li>
+              `).join('')}
+            </ul>
+          `}
+        </div>
+        <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
+          <button class="btn btn-primary" id="notify-send-email-btn">${emailReady ? 'Email selected' : 'Open email app for selected'}</button>
+          <button class="btn btn-ghost" data-close-notify="1">Close</button>
+        </div>
+        <p class="row-meta" style="margin-top:12px;">WhatsApp messages are sent one recipient at a time — click "WhatsApp" next to each person to open a pre-filled chat, then hit send in WhatsApp.</p>
       </div>
     </div>
   `;
@@ -468,14 +592,16 @@ function renderMembers(){
   const addForm = state.unlocked ? `
     <div class="glass card">
       <h2>Add a member</h2>
-      <div style="display:flex;gap:8px;">
-        <input type="text" id="new-member" placeholder="Member name">
-        <button class="btn btn-primary" id="add-member-btn">Add</button>
+      <div class="field-row-3">
+        <div class="field"><label>Name</label><input type="text" id="new-member" placeholder="Member name"></div>
+        <div class="field"><label>WhatsApp number</label><input type="text" id="new-member-phone" placeholder="e.g. 265991234567"></div>
+        <div class="field"><label>Email</label><input type="email" id="new-member-email" placeholder="name@example.com"></div>
       </div>
+      <button class="btn btn-primary" id="add-member-btn">Add member</button>
     </div>
     <div class="glass card">
       <h2>Bulk add members</h2>
-      <p class="row-meta" style="margin-bottom:8px;">Paste one name per line.</p>
+      <p class="row-meta" style="margin-bottom:8px;">Paste one name per line. Add phone/email individually afterward.</p>
       <textarea id="bulk-member-input" placeholder="Jane Doe
 John Smith"></textarea>
       <div style="margin-top:10px;"><button class="btn btn-primary" id="bulk-add-btn">Add all</button></div>
@@ -485,12 +611,25 @@ John Smith"></textarea>
     ${addForm}
     <div class="glass card">
       <h2>Members (${state.members.length})</h2>
+      <p class="row-meta" style="margin-bottom:10px;">Phone numbers must include the country code (no leading 0 or +) for WhatsApp links to work — e.g. 265991234567.</p>
       ${state.members.length===0 ? '<div class="empty">No members yet.</div>' : `
-        <ul style="list-style:none;margin:0;padding:0;">
-          ${state.members.map(m=>`
-            <li class="att-row"><span>${escapeHtml(m.name)}</span>${state.unlocked?`<button class="btn btn-ghost btn-sm" data-remove-member="${m.id}">Remove</button>`:''}</li>
-          `).join('')}
-        </ul>
+        <table>
+          <thead><tr><th>Name</th><th>WhatsApp number</th><th>Email</th><th></th></tr></thead>
+          <tbody>
+            ${state.members.map(m=>`
+              <tr>
+                <td>${escapeHtml(m.name)}</td>
+                <td>${state.unlocked
+                  ? `<input type="text" class="member-contact-input" data-member="${m.id}" data-field="phone" value="${escapeHtml(m.phone||'')}" placeholder="265…">`
+                  : `<span class="row-meta">${escapeHtml(m.phone||'—')}</span>`}</td>
+                <td>${state.unlocked
+                  ? `<input type="email" class="member-contact-input" data-member="${m.id}" data-field="email" value="${escapeHtml(m.email||'')}" placeholder="name@example.com">`
+                  : `<span class="row-meta">${escapeHtml(m.email||'—')}</span>`}</td>
+                <td>${state.unlocked?`<button class="btn btn-ghost btn-sm" data-remove-member="${m.id}">Remove</button>`:''}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
       `}
     </div>
   `;
@@ -622,10 +761,16 @@ function attachHandlers(){
 
   const newMeetingBtn = document.getElementById('new-meeting-btn'); if(newMeetingBtn) newMeetingBtn.onclick = ()=>{ state.editingMeetingId='new'; render(); };
   document.querySelectorAll('[data-open-meeting]').forEach(el=> el.onclick = ()=>{ state.openMeetingId = el.getAttribute('data-open-meeting'); render(); });
-  document.querySelectorAll('[data-close-modal]').forEach(el=> el.onclick = ()=>{ state.openMeetingId = null; render(); });
+  document.querySelectorAll('[data-close-modal]').forEach(el=> el.onclick = ()=>{ state.openMeetingId = null; state.notifyMeetingId = null; render(); });
   document.querySelectorAll('[data-close-form]').forEach(el=> el.onclick = ()=>{ state.editingMeetingId = null; render(); });
   document.querySelectorAll('[data-edit-meeting]').forEach(el=> el.onclick = ()=>{ state.editingMeetingId = el.getAttribute('data-edit-meeting'); state.openMeetingId=null; render(); });
   document.querySelectorAll('[data-delete-meeting]').forEach(el=> el.onclick = ()=>{ if(confirm('Delete this meeting?')) deleteMeeting(el.getAttribute('data-delete-meeting')); });
+
+  document.querySelectorAll('[data-notify-meeting]').forEach(el=> el.onclick = ()=>{ state.notifyMeetingId = el.getAttribute('data-notify-meeting'); render(); });
+  document.querySelectorAll('[data-close-notify]').forEach(el=> el.onclick = ()=>{ state.notifyMeetingId = null; render(); });
+  document.querySelectorAll('[data-wa-send]').forEach(el=> el.onclick = ()=> openWaFor(el.getAttribute('data-wa-send')));
+  const notifyEmailBtn = document.getElementById('notify-send-email-btn');
+  if(notifyEmailBtn) notifyEmailBtn.onclick = sendNotifyEmails;
 
   document.querySelectorAll('[data-save-meeting]').forEach(el=> el.onclick = ()=>{
     const id = el.getAttribute('data-save-meeting');
@@ -657,10 +802,17 @@ function attachHandlers(){
   });
 
   const addMemberBtn = document.getElementById('add-member-btn');
-  if(addMemberBtn) addMemberBtn.onclick = ()=>{ const i=document.getElementById('new-member'); addMember(i.value); i.value=''; };
+  if(addMemberBtn) addMemberBtn.onclick = ()=>{
+    const nameEl=document.getElementById('new-member'), phoneEl=document.getElementById('new-member-phone'), emailEl=document.getElementById('new-member-email');
+    addMember(nameEl.value, phoneEl.value, emailEl.value);
+    nameEl.value=''; phoneEl.value=''; emailEl.value='';
+  };
   const bulkAddBtn = document.getElementById('bulk-add-btn');
   if(bulkAddBtn) bulkAddBtn.onclick = ()=>{ const t=document.getElementById('bulk-member-input'); bulkAddMembers(t.value); t.value=''; };
   document.querySelectorAll('[data-remove-member]').forEach(btn=> btn.onclick = ()=> removeMember(btn.getAttribute('data-remove-member')));
+  document.querySelectorAll('.member-contact-input').forEach(inp=>{
+    inp.onblur = ()=> updateMemberContact(inp.getAttribute('data-member'), inp.getAttribute('data-field'), inp.value);
+  });
 }
 
 if('serviceWorker' in navigator){

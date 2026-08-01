@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rcnmw-register-v4'; // bump this any time index.html changes
+const CACHE_NAME = 'rcnmw-register-v5'; // bump this any time index.html changes
 const ASSETS = [
   './',
   './index.html',
