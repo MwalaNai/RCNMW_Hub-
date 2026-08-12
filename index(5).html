@@ -172,12 +172,14 @@
 
 <script>
 const CONFIG = {
-  apiKey: "AIzaSyCSEzkdAo3D2oJ-qrMOFgLtidhR4n6GcJY",
-  authDomain: "rcnmw-callregister.firebaseapp.com",
-  projectId: "rcnmw-callregister",
-  storageBucket: "rcnmw-callregister.firebasestorage.app",
-  messagingSenderId: "349024243223",
-  appId: "1:349024243223:web:cb1c431b6c0604486d9652"
+  EDIT_PIN: '1234', // change this before deploying — organizer PIN
+  FIREBASE: {
+    apiKey: "AIzaSyCSEzkdAo3D2oJ-qrMOFgLtidhR4n6GcJY",
+    authDomain: "rcnmw-callregister.firebaseapp.com",
+    projectId: "rcnmw-callregister",
+    storageBucket: "rcnmw-callregister.firebasestorage.app",
+    messagingSenderId: "349024243223",
+    appId: "1:349024243223:web:cb1c431b6c0604486d9652"
   }
 };
 
@@ -191,9 +193,11 @@ let state = {
   unlocked: false, synced: false,
   search: '', sortDesc: true,
   openMeetingId: null, editingMeetingId: null,
-  sidebarOpen: false
+  sidebarOpen: false,
+  sheetUrl: '', autoSync: false,
+  sheetSyncing: false, sheetSyncError: '', sheetSyncMsg: '', lastSheetSync: null
 };
-let db = null, docRef = null;
+let db = null, docRef = null, autoSyncDone = false;
 
 /* ============================= FIREBASE (single reliable source) ============================= */
 function initFirebase() {
@@ -207,14 +211,20 @@ function initFirebase() {
       state.members = data.members || [];
       state.meetings = data.meetings || [];
       state.attendance = data.attendance || {};
+      state.sheetUrl = data.sheetUrl || '';
+      state.autoSync = !!data.autoSync;
       state.synced = true;
       render();
+      if(state.autoSync && state.sheetUrl && !autoSyncDone){
+        autoSyncDone = true;
+        syncMembersFromSheet(false);
+      }
     }, err => { console.error('Firestore sync error', err); state.synced = false; render(); });
   } catch (e) { console.error('Firebase init failed', e); state.synced = false; render(); }
 }
 function saveState() {
   if (!docRef) return;
-  docRef.set({ members: state.members, meetings: state.meetings, attendance: state.attendance }, { merge: false })
+  docRef.set({ members: state.members, meetings: state.meetings, attendance: state.attendance, sheetUrl: state.sheetUrl, autoSync: state.autoSync }, { merge: false })
     .catch(err => console.error('Save failed', err));
 }
 function loadAll() { initFirebase(); render(); }
@@ -245,6 +255,64 @@ function bulkAddMembers(text){
   if(skipped>0) alert(added+' added, '+skipped+' skipped as duplicates.');
 }
 function removeMember(id){ state.members = state.members.filter(m=>m.id!==id); saveState(); render(); }
+
+/* ============================= GOOGLE SHEET SYNC ============================= */
+// Parses CSV text into rows of cells, handling quoted fields (incl. commas/newlines inside quotes).
+function parseCSV(text){
+  const rows = []; let row = []; let cell = ''; let inQuotes = false;
+  for(let i=0;i<text.length;i++){
+    const c = text[i], next = text[i+1];
+    if(inQuotes){
+      if(c === '"' && next === '"'){ cell += '"'; i++; }
+      else if(c === '"'){ inQuotes = false; }
+      else { cell += c; }
+    } else {
+      if(c === '"'){ inQuotes = true; }
+      else if(c === ','){ row.push(cell); cell=''; }
+      else if(c === '\n'){ row.push(cell); rows.push(row); row=[]; cell=''; }
+      else if(c === '\r'){ /* skip */ }
+      else { cell += c; }
+    }
+  }
+  if(cell.length || row.length){ row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(c => c.trim() !== ''));
+}
+function saveSheetUrl(){
+  const url = document.getElementById('sheet-url-input').value.trim();
+  state.sheetUrl = url; saveState(); render();
+}
+function toggleAutoSync(){ state.autoSync = !state.autoSync; saveState(); }
+async function syncMembersFromSheet(interactive){
+  if(!state.sheetUrl){ if(interactive) alert('Paste your published Google Sheet CSV link first.'); return; }
+  state.sheetSyncing = true; state.sheetSyncError=''; state.sheetSyncMsg=''; render();
+  try{
+    const res = await fetch(state.sheetUrl, { cache: 'no-store' });
+    if(!res.ok) throw new Error('Sheet returned status ' + res.status);
+    const text = await res.text();
+    const rows = parseCSV(text);
+    if(!rows.length) throw new Error('The sheet appears to be empty.');
+    // Skip a header row if the first cell of row 1 looks like a label rather than a real name.
+    const looksLikeHeader = /^\s*(full\s*)?name\s*$/i.test(rows[0][0] || '');
+    const dataRows = looksLikeHeader ? rows.slice(1) : rows;
+    const names = dataRows.map(r => (r[0]||'').trim()).filter(Boolean);
+    if(!names.length) throw new Error('No names found in column A of the sheet.');
+    const existing = new Set(state.members.map(m=>m.name.toLowerCase()));
+    let added = 0;
+    names.forEach(name=>{
+      if(existing.has(name.toLowerCase())) return;
+      state.members.push({id:uid(), name}); existing.add(name.toLowerCase()); added++;
+    });
+    state.lastSheetSync = new Date().toISOString();
+    state.sheetSyncMsg = added > 0 ? `Synced — ${added} new member${added===1?'':'s'} added.` : 'Synced — no new members found.';
+    state.sheetSyncing = false;
+    saveState(); render();
+  } catch(err){
+    console.error('Sheet sync failed', err);
+    state.sheetSyncing = false;
+    state.sheetSyncError = 'Could not read the sheet. Double-check it\'s published to the web as CSV and the link is correct.';
+    render();
+  }
+}
 
 /* ============================= MEETING ACTIONS ============================= */
 function blankMeeting(){
@@ -290,8 +358,8 @@ function render(){
 function renderSidebar(){
   const items = [
     ['register','Meetings Register', iconList()],
-    ['reports','Reports', iconChart()],
     ['members','Members', iconUsers()],
+    ['reports','Reports', iconChart()],
   ];
   return `
     <div class="sidebar ${state.sidebarOpen?'open':''}">
@@ -479,8 +547,39 @@ John Smith"></textarea>
       <div style="margin-top:10px;"><button class="btn btn-primary" id="bulk-add-btn">Add all</button></div>
     </div>` : `<div class="glass card"><div class="empty">Unlock editing in the sidebar to add or remove members.</div></div>`;
 
+  const sheetSync = state.unlocked ? `
+    <div class="glass card">
+      <h2>Sync members from Google Sheet</h2>
+      <p class="row-meta" style="margin-bottom:10px;">
+        Keep one column of names in a Google Sheet, publish it to the web as CSV, and paste the link below.
+        New names will be added automatically — existing members are never removed by a sync.
+      </p>
+      <details style="margin-bottom:12px;">
+        <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--rcn-blue);">How to get the CSV link</summary>
+        <ol style="font-size:12px;color:var(--muted);margin:8px 0 0;padding-left:18px;line-height:1.6;">
+          <li>In Google Sheets: File → Share → Publish to web.</li>
+          <li>Choose the sheet/tab with names, set format to <strong>Comma-separated values (.csv)</strong>, then click Publish.</li>
+          <li>Copy the generated link and paste it below. Put names in column A — a header like "Name" in row 1 is fine, it'll be skipped.</li>
+        </ol>
+      </details>
+      <div class="field"><label>Published CSV link</label><input type="text" id="sheet-url-input" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv" value="${escapeHtml(state.sheetUrl)}"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <button class="btn btn-primary btn-sm" id="save-sheet-url-btn">Save link</button>
+        <button class="btn btn-ghost btn-sm" id="sync-sheet-btn" ${state.sheetSyncing?'disabled':''}>${state.sheetSyncing?'Syncing…':'Sync now'}</button>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);font-weight:600;">
+          <input type="checkbox" id="autosync-checkbox" ${state.autoSync?'checked':''} style="width:14px;height:14px;">
+          Auto-sync when the app loads
+        </label>
+      </div>
+      ${state.sheetSyncError ? `<div class="setup-banner" style="margin-top:10px;">${escapeHtml(state.sheetSyncError)}</div>` : ''}
+      ${state.sheetSyncMsg && !state.sheetSyncError ? `<div class="row-meta" style="margin-top:10px;color:var(--success);font-weight:600;">${escapeHtml(state.sheetSyncMsg)}</div>` : ''}
+      ${state.lastSheetSync ? `<div class="row-meta" style="margin-top:4px;">Last synced ${new Date(state.lastSheetSync).toLocaleString()}</div>` : ''}
+    </div>
+  ` : '';
+
   return `
     ${addForm}
+    ${sheetSync}
     <div class="glass card">
       <h2>Members (${state.members.length})</h2>
       ${state.members.length===0 ? '<div class="empty">No members yet.</div>' : `
@@ -659,6 +758,10 @@ function attachHandlers(){
   const bulkAddBtn = document.getElementById('bulk-add-btn');
   if(bulkAddBtn) bulkAddBtn.onclick = ()=>{ const t=document.getElementById('bulk-member-input'); bulkAddMembers(t.value); t.value=''; };
   document.querySelectorAll('[data-remove-member]').forEach(btn=> btn.onclick = ()=> removeMember(btn.getAttribute('data-remove-member')));
+
+  const saveSheetBtn = document.getElementById('save-sheet-url-btn'); if(saveSheetBtn) saveSheetBtn.onclick = saveSheetUrl;
+  const syncSheetBtn = document.getElementById('sync-sheet-btn'); if(syncSheetBtn) syncSheetBtn.onclick = ()=> syncMembersFromSheet(true);
+  const autoSyncCb = document.getElementById('autosync-checkbox'); if(autoSyncCb) autoSyncCb.onchange = toggleAutoSync;
 }
 
 if('serviceWorker' in navigator){
