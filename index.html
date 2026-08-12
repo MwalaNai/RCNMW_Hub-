@@ -12,7 +12,6 @@
 <meta name="theme-color" content="#1A1836">
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <style>
   :root{
     --rcn-blue:#1B4B8F;
@@ -181,15 +180,6 @@ const CONFIG = {
     storageBucket: "rcnmw-callregister.firebasestorage.app",
     messagingSenderId: "349024243223",
     appId: "1:349024243223:web:cb1c431b6c0604486d9652"
-  },
-  // Optional. Leave as-is to skip automatic email sending — the app will
-  // fall back to opening a pre-filled mailto: link instead. To enable
-  // real one-click sending to multiple recipients, create a free account
-  // at emailjs.com and paste your own IDs here (see CLOUD_SETUP.md).
-  EMAILJS: {
-    publicKey: 'YOUR_EMAILJS_PUBLIC_KEY',
-    serviceId: 'YOUR_EMAILJS_SERVICE_ID',
-    templateId: 'YOUR_EMAILJS_TEMPLATE_ID'
   }
 };
 
@@ -202,10 +192,12 @@ let state = {
   page: 'register',
   unlocked: false, synced: false,
   search: '', sortDesc: true,
-  openMeetingId: null, editingMeetingId: null, notifyMeetingId: null,
-  sidebarOpen: false
+  openMeetingId: null, editingMeetingId: null,
+  sidebarOpen: false,
+  sheetUrl: '', autoSync: false,
+  sheetSyncing: false, sheetSyncError: '', sheetSyncMsg: '', lastSheetSync: null
 };
-let db = null, docRef = null;
+let db = null, docRef = null, autoSyncDone = false;
 
 /* ============================= FIREBASE (single reliable source) ============================= */
 function initFirebase() {
@@ -219,14 +211,20 @@ function initFirebase() {
       state.members = data.members || [];
       state.meetings = data.meetings || [];
       state.attendance = data.attendance || {};
+      state.sheetUrl = data.sheetUrl || '';
+      state.autoSync = !!data.autoSync;
       state.synced = true;
       render();
+      if(state.autoSync && state.sheetUrl && !autoSyncDone){
+        autoSyncDone = true;
+        syncMembersFromSheet(false);
+      }
     }, err => { console.error('Firestore sync error', err); state.synced = false; render(); });
   } catch (e) { console.error('Firebase init failed', e); state.synced = false; render(); }
 }
 function saveState() {
   if (!docRef) return;
-  docRef.set({ members: state.members, meetings: state.meetings, attendance: state.attendance }, { merge: false })
+  docRef.set({ members: state.members, meetings: state.meetings, attendance: state.attendance, sheetUrl: state.sheetUrl, autoSync: state.autoSync }, { merge: false })
     .catch(err => console.error('Save failed', err));
 }
 function loadAll() { initFirebase(); render(); }
@@ -243,11 +241,7 @@ function tryUnlock(pin){ if(pin === CONFIG.EDIT_PIN){ state.unlocked = true; ren
 function lock(){ state.unlocked = false; render(); }
 
 /* ============================= MEMBER ACTIONS ============================= */
-function addMember(name, phone, email){
-  if(!name.trim()) return;
-  state.members.push({id:uid(), name:name.trim(), phone:(phone||'').trim(), email:(email||'').trim()});
-  saveState(); render();
-}
+function addMember(name){ if(!name.trim()) return; state.members.push({id:uid(), name:name.trim()}); saveState(); render(); }
 function bulkAddMembers(text){
   const names = text.split('\n').map(n=>n.trim()).filter(Boolean);
   if(!names.length) return;
@@ -255,17 +249,69 @@ function bulkAddMembers(text){
   let added=0, skipped=0;
   names.forEach(name=>{
     if(existing.has(name.toLowerCase())){ skipped++; return; }
-    state.members.push({id:uid(), name, phone:'', email:''}); existing.add(name.toLowerCase()); added++;
+    state.members.push({id:uid(), name}); existing.add(name.toLowerCase()); added++;
   });
   saveState(); render();
   if(skipped>0) alert(added+' added, '+skipped+' skipped as duplicates.');
 }
 function removeMember(id){ state.members = state.members.filter(m=>m.id!==id); saveState(); render(); }
-function updateMemberContact(id, field, value){
-  const mem = state.members.find(m=>m.id===id);
-  if(!mem) return;
-  mem[field] = value;
-  saveState();
+
+/* ============================= GOOGLE SHEET SYNC ============================= */
+// Parses CSV text into rows of cells, handling quoted fields (incl. commas/newlines inside quotes).
+function parseCSV(text){
+  const rows = []; let row = []; let cell = ''; let inQuotes = false;
+  for(let i=0;i<text.length;i++){
+    const c = text[i], next = text[i+1];
+    if(inQuotes){
+      if(c === '"' && next === '"'){ cell += '"'; i++; }
+      else if(c === '"'){ inQuotes = false; }
+      else { cell += c; }
+    } else {
+      if(c === '"'){ inQuotes = true; }
+      else if(c === ','){ row.push(cell); cell=''; }
+      else if(c === '\n'){ row.push(cell); rows.push(row); row=[]; cell=''; }
+      else if(c === '\r'){ /* skip */ }
+      else { cell += c; }
+    }
+  }
+  if(cell.length || row.length){ row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(c => c.trim() !== ''));
+}
+function saveSheetUrl(){
+  const url = document.getElementById('sheet-url-input').value.trim();
+  state.sheetUrl = url; saveState(); render();
+}
+function toggleAutoSync(){ state.autoSync = !state.autoSync; saveState(); }
+async function syncMembersFromSheet(interactive){
+  if(!state.sheetUrl){ if(interactive) alert('Paste your published Google Sheet CSV link first.'); return; }
+  state.sheetSyncing = true; state.sheetSyncError=''; state.sheetSyncMsg=''; render();
+  try{
+    const res = await fetch(state.sheetUrl, { cache: 'no-store' });
+    if(!res.ok) throw new Error('Sheet returned status ' + res.status);
+    const text = await res.text();
+    const rows = parseCSV(text);
+    if(!rows.length) throw new Error('The sheet appears to be empty.');
+    // Skip a header row if the first cell of row 1 looks like a label rather than a real name.
+    const looksLikeHeader = /^\s*(full\s*)?name\s*$/i.test(rows[0][0] || '');
+    const dataRows = looksLikeHeader ? rows.slice(1) : rows;
+    const names = dataRows.map(r => (r[0]||'').trim()).filter(Boolean);
+    if(!names.length) throw new Error('No names found in column A of the sheet.');
+    const existing = new Set(state.members.map(m=>m.name.toLowerCase()));
+    let added = 0;
+    names.forEach(name=>{
+      if(existing.has(name.toLowerCase())) return;
+      state.members.push({id:uid(), name}); existing.add(name.toLowerCase()); added++;
+    });
+    state.lastSheetSync = new Date().toISOString();
+    state.sheetSyncMsg = added > 0 ? `Synced — ${added} new member${added===1?'':'s'} added.` : 'Synced — no new members found.';
+    state.sheetSyncing = false;
+    saveState(); render();
+  } catch(err){
+    console.error('Sheet sync failed', err);
+    state.sheetSyncing = false;
+    state.sheetSyncError = 'Could not read the sheet. Double-check it\'s published to the web as CSV and the link is correct.';
+    render();
+  }
 }
 
 /* ============================= MEETING ACTIONS ============================= */
@@ -292,65 +338,6 @@ function setStatus(meetingId, memberId, status){
   saveState(); render();
 }
 
-/* ============================= NOTIFICATIONS ============================= */
-function defaultNotifyMessage(m){
-  const when = fmtDate(m.date) + (m.startTime ? ' at '+m.startTime : '');
-  return `Reminder: "${m.title||'Meeting'}" is scheduled for ${when}`
-    + (m.venue ? ` at ${m.venue}` : '')
-    + (m.objective ? `.\n\nObjective: ${m.objective}` : '.')
-    + `\n\n— RCNMW Meetings Register`;
-}
-function cleanPhoneForWa(phone){
-  // wa.me needs digits only, full international country code, no leading + or 0
-  return String(phone||'').replace(/[^\d]/g,'');
-}
-function waLink(phone, message){
-  const digits = cleanPhoneForWa(phone);
-  return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
-}
-function emailConfigured(){
-  return CONFIG.EMAILJS && CONFIG.EMAILJS.publicKey && CONFIG.EMAILJS.publicKey !== 'YOUR_EMAILJS_PUBLIC_KEY';
-}
-function mailtoLink(emails, subject, body){
-  return `mailto:${encodeURIComponent(emails.join(','))}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-}
-async function sendEmailsViaEmailJS(recipients, subject, message){
-  if(typeof emailjs === 'undefined'){ alert('Email service failed to load. Check your internet connection and try again.'); return; }
-  emailjs.init(CONFIG.EMAILJS.publicKey);
-  let sent = 0, failed = 0;
-  for(const r of recipients){
-    try {
-      await emailjs.send(CONFIG.EMAILJS.serviceId, CONFIG.EMAILJS.templateId, {
-        to_email: r.email, to_name: r.name, subject, message
-      });
-      sent++;
-    } catch(e){ console.error('Email send failed for', r.email, e); failed++; }
-  }
-  alert(`Email sent to ${sent} recipient${sent===1?'':'s'}.` + (failed ? ` ${failed} failed — check the console for details.` : ''));
-}
-function sendNotifyEmails(){
-  const m = state.meetings.find(x=>x.id===state.notifyMeetingId);
-  if(!m) return;
-  const subject = 'Reminder: ' + (m.title || 'Meeting');
-  const message = document.getElementById('notify-message')?.value || defaultNotifyMessage(m);
-  const recipients = state.members.filter(mem =>
-    document.querySelector(`[data-notify-check="${mem.id}"]`)?.checked && mem.email
-  );
-  if(recipients.length===0){ alert('No selected recipients have an email address on file.'); return; }
-  if(emailConfigured()){
-    sendEmailsViaEmailJS(recipients, subject, message);
-  } else {
-    window.location.href = mailtoLink(recipients.map(r=>r.email), subject, message);
-  }
-}
-function openWaFor(memberId){
-  const m = state.meetings.find(x=>x.id===state.notifyMeetingId);
-  const mem = state.members.find(x=>x.id===memberId);
-  if(!m || !mem || !mem.phone) return;
-  const message = document.getElementById('notify-message')?.value || defaultNotifyMessage(m);
-  window.open(waLink(mem.phone, message), '_blank');
-}
-
 /* ============================= RENDER ============================= */
 function render(){
   const app = document.getElementById('app');
@@ -371,8 +358,8 @@ function render(){
 function renderSidebar(){
   const items = [
     ['register','Meetings Register', iconList()],
-    ['reports','Reports', iconChart()],
     ['members','Members', iconUsers()],
+    ['reports','Reports', iconChart()],
   ];
   return `
     <div class="sidebar ${state.sidebarOpen?'open':''}">
@@ -490,55 +477,10 @@ function renderMeetingModal(m){
           </ul>
         `}
         ${state.unlocked ? `
-          <div style="display:flex;gap:8px;margin-top:18px;flex-wrap:wrap;">
-            <button class="btn btn-primary btn-sm" data-notify-meeting="${m.id}">Notify participants</button>
+          <div style="display:flex;gap:8px;margin-top:18px;">
             <button class="btn btn-primary btn-sm" data-edit-meeting="${m.id}">Edit meeting</button>
             <button class="btn btn-ghost btn-sm" data-delete-meeting="${m.id}">Delete meeting</button>
           </div>` : ''}
-      </div>
-    </div>
-    ${state.notifyMeetingId===m.id ? renderNotifyPanel(m) : ''}
-  `;
-}
-
-function renderNotifyPanel(m){
-  const emailReady = emailConfigured();
-  return `
-    <div class="modal-backdrop" data-close-notify="1">
-      <div class="modal" onclick="event.stopPropagation()">
-        <div class="modal-head">
-          <h2>Notify participants</h2>
-          <button class="modal-close" data-close-notify="1">✕</button>
-        </div>
-        <div class="field">
-          <label>Message</label>
-          <textarea id="notify-message" rows="5">${escapeHtml(defaultNotifyMessage(m))}</textarea>
-        </div>
-        ${!emailReady ? `<div class="setup-banner" style="margin-bottom:14px;">Email isn't configured for one-click sending yet — "Email selected" will open your device's email app instead, pre-filled and ready to send. See CLOUD_SETUP.md to enable automatic sending.</div>` : ''}
-        <div class="field">
-          <label>Recipients</label>
-          ${state.members.length===0 ? '<div class="empty">No members yet — add some on the Members page first.</div>' : `
-            <ul style="list-style:none;margin:0;padding:0;max-height:280px;overflow-y:auto;">
-              ${state.members.map(mem=>`
-                <li class="att-row">
-                  <span style="display:flex;align-items:center;gap:8px;">
-                    <input type="checkbox" data-notify-check="${mem.id}" ${(mem.phone||mem.email)?'checked':''} ${(!mem.phone&&!mem.email)?'disabled':''}>
-                    ${escapeHtml(mem.name)}
-                    ${!mem.phone && !mem.email ? '<span class="row-meta">(no contact info)</span>' : ''}
-                  </span>
-                  <span style="display:flex;gap:6px;">
-                    ${mem.phone ? `<button class="btn btn-ghost btn-sm" data-wa-send="${mem.id}">WhatsApp</button>` : ''}
-                  </span>
-                </li>
-              `).join('')}
-            </ul>
-          `}
-        </div>
-        <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
-          <button class="btn btn-primary" id="notify-send-email-btn">${emailReady ? 'Email selected' : 'Open email app for selected'}</button>
-          <button class="btn btn-ghost" data-close-notify="1">Close</button>
-        </div>
-        <p class="row-meta" style="margin-top:12px;">WhatsApp messages are sent one recipient at a time — click "WhatsApp" next to each person to open a pre-filled chat, then hit send in WhatsApp.</p>
       </div>
     </div>
   `;
@@ -592,44 +534,60 @@ function renderMembers(){
   const addForm = state.unlocked ? `
     <div class="glass card">
       <h2>Add a member</h2>
-      <div class="field-row-3">
-        <div class="field"><label>Name</label><input type="text" id="new-member" placeholder="Member name"></div>
-        <div class="field"><label>WhatsApp number</label><input type="text" id="new-member-phone" placeholder="e.g. 265991234567"></div>
-        <div class="field"><label>Email</label><input type="email" id="new-member-email" placeholder="name@example.com"></div>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="new-member" placeholder="Member name">
+        <button class="btn btn-primary" id="add-member-btn">Add</button>
       </div>
-      <button class="btn btn-primary" id="add-member-btn">Add member</button>
     </div>
     <div class="glass card">
       <h2>Bulk add members</h2>
-      <p class="row-meta" style="margin-bottom:8px;">Paste one name per line. Add phone/email individually afterward.</p>
+      <p class="row-meta" style="margin-bottom:8px;">Paste one name per line.</p>
       <textarea id="bulk-member-input" placeholder="Jane Doe
 John Smith"></textarea>
       <div style="margin-top:10px;"><button class="btn btn-primary" id="bulk-add-btn">Add all</button></div>
     </div>` : `<div class="glass card"><div class="empty">Unlock editing in the sidebar to add or remove members.</div></div>`;
 
+  const sheetSync = state.unlocked ? `
+    <div class="glass card">
+      <h2>Sync members from Google Sheet</h2>
+      <p class="row-meta" style="margin-bottom:10px;">
+        Keep one column of names in a Google Sheet, publish it to the web as CSV, and paste the link below.
+        New names will be added automatically — existing members are never removed by a sync.
+      </p>
+      <details style="margin-bottom:12px;">
+        <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--rcn-blue);">How to get the CSV link</summary>
+        <ol style="font-size:12px;color:var(--muted);margin:8px 0 0;padding-left:18px;line-height:1.6;">
+          <li>In Google Sheets: File → Share → Publish to web.</li>
+          <li>Choose the sheet/tab with names, set format to <strong>Comma-separated values (.csv)</strong>, then click Publish.</li>
+          <li>Copy the generated link and paste it below. Put names in column A — a header like "Name" in row 1 is fine, it'll be skipped.</li>
+        </ol>
+      </details>
+      <div class="field"><label>Published CSV link</label><input type="text" id="sheet-url-input" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv" value="${escapeHtml(state.sheetUrl)}"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <button class="btn btn-primary btn-sm" id="save-sheet-url-btn">Save link</button>
+        <button class="btn btn-ghost btn-sm" id="sync-sheet-btn" ${state.sheetSyncing?'disabled':''}>${state.sheetSyncing?'Syncing…':'Sync now'}</button>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);font-weight:600;">
+          <input type="checkbox" id="autosync-checkbox" ${state.autoSync?'checked':''} style="width:14px;height:14px;">
+          Auto-sync when the app loads
+        </label>
+      </div>
+      ${state.sheetSyncError ? `<div class="setup-banner" style="margin-top:10px;">${escapeHtml(state.sheetSyncError)}</div>` : ''}
+      ${state.sheetSyncMsg && !state.sheetSyncError ? `<div class="row-meta" style="margin-top:10px;color:var(--success);font-weight:600;">${escapeHtml(state.sheetSyncMsg)}</div>` : ''}
+      ${state.lastSheetSync ? `<div class="row-meta" style="margin-top:4px;">Last synced ${new Date(state.lastSheetSync).toLocaleString()}</div>` : ''}
+    </div>
+  ` : '';
+
   return `
     ${addForm}
+    ${sheetSync}
     <div class="glass card">
       <h2>Members (${state.members.length})</h2>
-      <p class="row-meta" style="margin-bottom:10px;">Phone numbers must include the country code (no leading 0 or +) for WhatsApp links to work — e.g. 265991234567.</p>
       ${state.members.length===0 ? '<div class="empty">No members yet.</div>' : `
-        <table>
-          <thead><tr><th>Name</th><th>WhatsApp number</th><th>Email</th><th></th></tr></thead>
-          <tbody>
-            ${state.members.map(m=>`
-              <tr>
-                <td>${escapeHtml(m.name)}</td>
-                <td>${state.unlocked
-                  ? `<input type="text" class="member-contact-input" data-member="${m.id}" data-field="phone" value="${escapeHtml(m.phone||'')}" placeholder="265…">`
-                  : `<span class="row-meta">${escapeHtml(m.phone||'—')}</span>`}</td>
-                <td>${state.unlocked
-                  ? `<input type="email" class="member-contact-input" data-member="${m.id}" data-field="email" value="${escapeHtml(m.email||'')}" placeholder="name@example.com">`
-                  : `<span class="row-meta">${escapeHtml(m.email||'—')}</span>`}</td>
-                <td>${state.unlocked?`<button class="btn btn-ghost btn-sm" data-remove-member="${m.id}">Remove</button>`:''}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
+        <ul style="list-style:none;margin:0;padding:0;">
+          ${state.members.map(m=>`
+            <li class="att-row"><span>${escapeHtml(m.name)}</span>${state.unlocked?`<button class="btn btn-ghost btn-sm" data-remove-member="${m.id}">Remove</button>`:''}</li>
+          `).join('')}
+        </ul>
       `}
     </div>
   `;
@@ -761,16 +719,10 @@ function attachHandlers(){
 
   const newMeetingBtn = document.getElementById('new-meeting-btn'); if(newMeetingBtn) newMeetingBtn.onclick = ()=>{ state.editingMeetingId='new'; render(); };
   document.querySelectorAll('[data-open-meeting]').forEach(el=> el.onclick = ()=>{ state.openMeetingId = el.getAttribute('data-open-meeting'); render(); });
-  document.querySelectorAll('[data-close-modal]').forEach(el=> el.onclick = ()=>{ state.openMeetingId = null; state.notifyMeetingId = null; render(); });
+  document.querySelectorAll('[data-close-modal]').forEach(el=> el.onclick = ()=>{ state.openMeetingId = null; render(); });
   document.querySelectorAll('[data-close-form]').forEach(el=> el.onclick = ()=>{ state.editingMeetingId = null; render(); });
   document.querySelectorAll('[data-edit-meeting]').forEach(el=> el.onclick = ()=>{ state.editingMeetingId = el.getAttribute('data-edit-meeting'); state.openMeetingId=null; render(); });
   document.querySelectorAll('[data-delete-meeting]').forEach(el=> el.onclick = ()=>{ if(confirm('Delete this meeting?')) deleteMeeting(el.getAttribute('data-delete-meeting')); });
-
-  document.querySelectorAll('[data-notify-meeting]').forEach(el=> el.onclick = ()=>{ state.notifyMeetingId = el.getAttribute('data-notify-meeting'); render(); });
-  document.querySelectorAll('[data-close-notify]').forEach(el=> el.onclick = ()=>{ state.notifyMeetingId = null; render(); });
-  document.querySelectorAll('[data-wa-send]').forEach(el=> el.onclick = ()=> openWaFor(el.getAttribute('data-wa-send')));
-  const notifyEmailBtn = document.getElementById('notify-send-email-btn');
-  if(notifyEmailBtn) notifyEmailBtn.onclick = sendNotifyEmails;
 
   document.querySelectorAll('[data-save-meeting]').forEach(el=> el.onclick = ()=>{
     const id = el.getAttribute('data-save-meeting');
@@ -802,17 +754,14 @@ function attachHandlers(){
   });
 
   const addMemberBtn = document.getElementById('add-member-btn');
-  if(addMemberBtn) addMemberBtn.onclick = ()=>{
-    const nameEl=document.getElementById('new-member'), phoneEl=document.getElementById('new-member-phone'), emailEl=document.getElementById('new-member-email');
-    addMember(nameEl.value, phoneEl.value, emailEl.value);
-    nameEl.value=''; phoneEl.value=''; emailEl.value='';
-  };
+  if(addMemberBtn) addMemberBtn.onclick = ()=>{ const i=document.getElementById('new-member'); addMember(i.value); i.value=''; };
   const bulkAddBtn = document.getElementById('bulk-add-btn');
   if(bulkAddBtn) bulkAddBtn.onclick = ()=>{ const t=document.getElementById('bulk-member-input'); bulkAddMembers(t.value); t.value=''; };
   document.querySelectorAll('[data-remove-member]').forEach(btn=> btn.onclick = ()=> removeMember(btn.getAttribute('data-remove-member')));
-  document.querySelectorAll('.member-contact-input').forEach(inp=>{
-    inp.onblur = ()=> updateMemberContact(inp.getAttribute('data-member'), inp.getAttribute('data-field'), inp.value);
-  });
+
+  const saveSheetBtn = document.getElementById('save-sheet-url-btn'); if(saveSheetBtn) saveSheetBtn.onclick = saveSheetUrl;
+  const syncSheetBtn = document.getElementById('sync-sheet-btn'); if(syncSheetBtn) syncSheetBtn.onclick = ()=> syncMembersFromSheet(true);
+  const autoSyncCb = document.getElementById('autosync-checkbox'); if(autoSyncCb) autoSyncCb.onchange = toggleAutoSync;
 }
 
 if('serviceWorker' in navigator){
